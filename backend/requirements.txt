@@ -11,3 +11,13 @@ python-dotenv==1.0.1
 
 # HTTP client (для sync-движков в Sprint 2+)
 httpx==0.28.1
+
+# Auth — JWT + bcrypt (Sprint 1)
+bcrypt==5.0.0
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.20   # OAuth2PasswordRequestForm требует form-парсер
+
+# Тесты
+pytest==8.3.5
+pytest-asyncio==0.25.3
+mongomock-motor==0.0.34

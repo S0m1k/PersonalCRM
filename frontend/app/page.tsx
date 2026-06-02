@@ -1,10 +1,10 @@
 /**
- * Главная страница — отображает статус health-check бэкенда.
+ * Главная страница — статус health-check + навигация.
  *
- * Запрос к API делается на сервере (Server Component), чтобы избежать CORS
- * при SSR. Для клиентских обновлений в реальном приложении используйте
- * React Query / SWR (добавим в Sprint 1).
+ * Запрос к API делается на сервере (Server Component) чтобы избежать CORS при SSR.
  */
+
+import Link from 'next/link';
 
 interface HealthResponse {
   status: string;
@@ -17,7 +17,6 @@ async function fetchHealth(): Promise<HealthResponse | null> {
 
   try {
     const res = await fetch(`${apiUrl}/api/health`, {
-      // next: { revalidate: 30 } — обновлять каждые 30 с (раскомментируйте при необходимости)
       cache: 'no-store',
     });
 
@@ -39,9 +38,40 @@ export default async function HomePage() {
       <h1>PersonalCRM</h1>
       <p>Персональная CRM с синхронизацией контактов из Outlook, Google и ручным импортом.</p>
 
+      {/* Навигация */}
+      <nav style={{ display: 'flex', gap: '1rem', margin: '1.5rem 0' }}>
+        <Link
+          href="/contacts"
+          style={{
+            padding: '0.5rem 1.25rem',
+            background: '#2563eb',
+            color: '#fff',
+            borderRadius: 6,
+            textDecoration: 'none',
+            fontWeight: 600,
+          }}
+        >
+          Контакты
+        </Link>
+        <Link
+          href="/login"
+          style={{
+            padding: '0.5rem 1.25rem',
+            background: '#fff',
+            color: '#2563eb',
+            border: '1px solid #2563eb',
+            borderRadius: 6,
+            textDecoration: 'none',
+            fontWeight: 600,
+          }}
+        >
+          Войти
+        </Link>
+      </nav>
+
       <section
         style={{
-          marginTop: '2rem',
+          marginTop: '1.5rem',
           padding: '1.5rem',
           background: '#fff',
           borderRadius: '8px',
@@ -53,7 +83,7 @@ export default async function HomePage() {
 
         {health === null ? (
           <p style={{ color: '#c00' }}>
-            ❌ Бэкенд недоступен. Убедитесь, что запущен{' '}
+            Бэкенд недоступен. Убедитесь, что запущен{' '}
             <code>docker-compose up</code> или <code>uvicorn</code>.
           </p>
         ) : (
@@ -67,7 +97,7 @@ export default async function HomePage() {
       </section>
 
       <p style={{ marginTop: '2rem', fontSize: '0.9rem', color: '#666' }}>
-        Sprint 0 — скелет проекта. Следующий шаг: Sprint 1 — модель контакта и CRUD.
+        Sprint 1 — ядро CRM: контакты, авторизация, CRUD.
       </p>
     </main>
   );

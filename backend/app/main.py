@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import close_db, connect_db, get_db
+from .routers import auth as auth_router
+from .routers import contacts as contacts_router
 
 
 @asynccontextmanager
@@ -21,7 +23,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="PersonalCRM API",
-    version="0.1.0",
+    version="0.2.0",
     description="Персональная CRM с синхронизацией контактов",
     lifespan=lifespan,
 )
@@ -34,6 +36,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Роутеры
+# ---------------------------------------------------------------------------
+
+# Auth: /api/auth/login, /api/auth/me — публичный login, me требует токена
+app.include_router(auth_router.router)
+
+# Contacts: /api/contacts/* — требуют токена
+app.include_router(contacts_router.router)
+
+
+# ---------------------------------------------------------------------------
+# Health-check (публичный)
+# ---------------------------------------------------------------------------
 
 
 @app.get("/api/health", tags=["system"])
