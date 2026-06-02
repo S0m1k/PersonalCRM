@@ -94,7 +94,7 @@
 
 - **Фронтенд:** React
 - **Режим:** single-user (multi-user — на будущее, в модель данных не закладываем)
-- **Хостинг:** арендуется отдельно (нужен к Sprint 2 для OAuth redirect и webhooks)
+- **Хостинг:** Timeweb (нужен HTTPS-домен к Sprint 2 для OAuth redirect и webhooks)
 
 ## Открытые вопросы
 
