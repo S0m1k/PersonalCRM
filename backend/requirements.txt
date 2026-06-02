@@ -1,0 +1,13 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# MongoDB async driver
+motor==3.6.0
+
+# Settings / env
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# HTTP client (для sync-движков в Sprint 2+)
+httpx==0.28.1
