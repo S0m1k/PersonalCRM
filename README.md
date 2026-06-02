@@ -9,9 +9,10 @@
 ## Стек (план)
 
 - **Backend:** Python (FastAPI), MongoDB
+- **Frontend:** React
 - **Sync:** Microsoft Graph API, Google People API
 - **Фоновые задачи:** APScheduler
-- **Frontend:** TBD
+- **Режим:** single-user (multi-user — на будущее)
 
 ## Документация
 
