@@ -9,7 +9,7 @@
 | Sprint 0 | Каркас проекта, инфраструктура | ✅ |
 | Sprint 1 | Ядро CRM: модель контакта, CRUD, базовый UI | ✅ |
 | Sprint 2 | MVP синхронизации (Microsoft Graph + импорт + дедуп) | ⬜ |
-| Sprint 3 | Полноценный sync (Google, delta, webhooks, two-way) | ⬜ |
+| Sprint 3 | Полноценный sync (Google, delta, webhooks, two-way) | 🟡 код готов |
 | Sprint 4 | Автоматизация и обогащение (AI-merge, scheduler) | ⬜ |
 
 ---
@@ -67,15 +67,17 @@
 
 **Цель:** real-time, двусторонний, Google. (Раздел "v2" в архитектуре.)
 
-- [ ] Google People API: OAuth + pull + маппинг
-- [ ] Delta sync (Microsoft) + sync tokens (Google)
-- [ ] Webhooks Microsoft (subscription + продление каждые 48ч)
-- [ ] Двусторонний push (CRM → Outlook/Google)
-- [ ] Разрешение конфликтов (last-write-wins или UI выбора)
+- [x] Google People API: OAuth + pull + маппинг (`sync/google.py`)
+- [x] Delta sync (Microsoft) + sync tokens (Google, 410-resync)
+- [x] Webhooks Microsoft (subscription create/renew/delete + публичный обработчик)
+- [x] Двусторонний push (CRM → Outlook/Google) + сохранение external_id
+- [x] Разрешение конфликтов — **last-write-wins** через `merge_contacts` (UI-выбор отложен, см. QUESTIONS)
 - [x] Импорт Telegram export (JSON) — *сделано в Sprint 2*
-- [ ] Фоновый scheduler (APScheduler: periodic sync, refresh токенов)
+- [x] Фоновый scheduler (APScheduler: periodic sync 30м, refresh токенов 15м, продление вебхуков 12ч)
 
 **Definition of Done:** изменение в Outlook прилетает в CRM почти мгновенно; правка в CRM уходит обратно; Google подключается и синкается.
+
+> Статус: весь код + 113 тестов (мок-Graph/People). **Боевая проверка OAuth/webhooks требует реальных кредов (Azure, Google Cloud) и публичного HTTPS-домена** — webhooks на localhost не приходят. UI: кнопки «Подключить Outlook/Google», ручной sync, история. Push и подписки пока только через API (UI-кнопки — Sprint 4 или по запросу).
 
 ---
 

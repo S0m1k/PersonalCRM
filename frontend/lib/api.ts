@@ -264,6 +264,19 @@ export async function connectMicrosoft(): Promise<{ authorize_url: string; state
   });
 }
 
+export async function connectGoogle(): Promise<{ authorize_url: string; state: string }> {
+  return apiFetch<{ authorize_url: string; state: string }>('/api/sync/connect/google', {
+    method: 'POST',
+  });
+}
+
+export async function pushContact(
+  connectionId: string,
+  contactId: string,
+): Promise<{ status: string; provider: string; external_id: string | null }> {
+  return apiFetch(`/api/sync/contacts/${connectionId}/push/${contactId}`, { method: 'POST' });
+}
+
 export async function deleteConnection(id: string): Promise<void> {
   return apiFetch<void>(`/api/sync/connections/${id}`, { method: 'DELETE' });
 }

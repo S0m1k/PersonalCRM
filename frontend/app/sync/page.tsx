@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
+  connectGoogle,
   connectMicrosoft,
   deleteConnection,
   getConnections,
@@ -57,20 +58,21 @@ export default function SyncPage() {
     if (params.get('error')) setMessage(`Ошибка подключения: ${params.get('error')}`);
   }, [handle401, load]);
 
-  async function handleConnect() {
+  async function handleConnect(provider: 'microsoft' | 'google') {
     setBusy(true);
     setMessage(null);
     try {
-      const { authorize_url } = await connectMicrosoft();
+      const { authorize_url } =
+        provider === 'microsoft' ? await connectMicrosoft() : await connectGoogle();
       window.location.href = authorize_url;
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'Не авторизован') return handle401();
-      // 501 — Azure не настроен
       const text = err instanceof Error ? err.message : '';
-      if (text.includes('Azure') || text.includes('501')) {
+      if (text.includes('Azure') || text.includes('Google') || text.includes('501')) {
         setMessage(
-          'Outlook OAuth ещё не настроен. Нужно зарегистрировать приложение в Azure AD ' +
-            'и задать MS_CLIENT_ID / MS_CLIENT_SECRET / MS_REDIRECT_URI в backend/.env.',
+          provider === 'microsoft'
+            ? 'Outlook OAuth ещё не настроен: задай MS_CLIENT_ID / MS_CLIENT_SECRET / MS_REDIRECT_URI в backend/.env (регистрация в Azure AD).'
+            : 'Google OAuth ещё не настроен: задай GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI в backend/.env (Google Cloud Console).',
         );
       } else {
         setMessage('Не удалось начать подключение.');
@@ -125,9 +127,14 @@ export default function SyncPage() {
 
       <section style={cardStyle}>
         <h2 style={{ marginTop: 0, fontSize: '1.1rem' }}>Подключения</h2>
-        <button onClick={handleConnect} disabled={busy} style={primaryBtn}>
-          + Подключить Outlook
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button onClick={() => handleConnect('microsoft')} disabled={busy} style={primaryBtn}>
+            + Подключить Outlook
+          </button>
+          <button onClick={() => handleConnect('google')} disabled={busy} style={{ ...primaryBtn, background: '#dc2626' }}>
+            + Подключить Google
+          </button>
+        </div>
 
         {loading ? (
           <p>Загрузка…</p>
