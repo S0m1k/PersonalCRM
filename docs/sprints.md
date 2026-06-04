@@ -23,7 +23,7 @@
 - [x] Подключение к MongoDB (docker-compose для локалки)
 - [x] Конфиг через `.env` (секреты, строки подключения)
 - [ ] Базовый CI (линт + тесты)
-- [ ] Шаблон для хранения зашифрованных токенов
+- [x] Шаблон для хранения зашифрованных токенов (Fernet, `backend/app/crypto.py`)
 
 **Definition of Done:** `docker-compose up` поднимает API + MongoDB, проходит health-check и линт.
 
@@ -49,15 +49,17 @@
 
 **Цель:** подтянуть контакты из Outlook и из файла, без дублей. (Раздел "MVP" в архитектуре.)
 
-- [ ] OAuth-флоу с Microsoft (connect + callback, хранение токенов)
-- [ ] Pull контактов через Microsoft Graph (`fetch_outlook_contacts`)
-- [ ] Маппинг Outlook → модель CRM (`map_outlook_to_crm`)
-- [ ] Дедупликация по телефону/email (автоматический merge ≥ 90)
-- [ ] Импорт файла CSV/vCard: upload → preview (с дублями) → confirm
-- [ ] Кнопка «Синхронизировать» (ручной trigger) + sync_log
-- [ ] UI разрешения дублей (side-by-side для score 70–89)
+- [x] OAuth-флоу с Microsoft (connect + callback, хранение зашифрованных токенов) — *код готов, нужны реальные креды Azure для end-to-end*
+- [x] Pull контактов через Microsoft Graph (`fetch_outlook_contacts`)
+- [x] Маппинг Outlook → модель CRM (`map_outlook_to_crm`)
+- [x] Дедупликация по телефону/email (автоматический merge ≥ 90)
+- [x] Импорт файла CSV/vCard/Telegram: upload → preview (с дублями) → confirm
+- [x] Кнопка «Синхронизировать» (ручной trigger) + sync_log
+- [x] UI разрешения дублей (выбор merge/skip/create для score 70–89)
 
 **Definition of Done:** подключаю Outlook, жму «Синхронизировать» — контакты появляются без дублей; загружаю CSV — вижу превью и подтверждаю.
+
+> Статус: импорт + дедуп проверены live и юнит-тестами. Microsoft OAuth/Graph покрыт тестами с мок-Graph; для боевой проверки нужно зарегистрировать приложение в Azure AD (MS_CLIENT_ID/SECRET/REDIRECT_URI). Telegram-парсер уже сделан здесь (в плане Sprint 3 был — закрыт раньше).
 
 ---
 
@@ -70,7 +72,7 @@
 - [ ] Webhooks Microsoft (subscription + продление каждые 48ч)
 - [ ] Двусторонний push (CRM → Outlook/Google)
 - [ ] Разрешение конфликтов (last-write-wins или UI выбора)
-- [ ] Импорт Telegram export (JSON)
+- [x] Импорт Telegram export (JSON) — *сделано в Sprint 2*
 - [ ] Фоновый scheduler (APScheduler: periodic sync, refresh токенов)
 
 **Definition of Done:** изменение в Outlook прилетает в CRM почти мгновенно; правка в CRM уходит обратно; Google подключается и синкается.

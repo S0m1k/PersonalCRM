@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db import close_db, connect_db, get_db
 from .routers import auth as auth_router
 from .routers import contacts as contacts_router
+from .routers import import_ as import_router
+from .routers import sync as sync_router
 
 
 @asynccontextmanager
@@ -46,6 +48,12 @@ app.include_router(auth_router.router)
 
 # Contacts: /api/contacts/* — требуют токена
 app.include_router(contacts_router.router)
+
+# Sync: /api/sync/* — подключение провайдеров и синхронизация (Sprint 2)
+app.include_router(sync_router.router)
+
+# Import: /api/import/* — загрузка файлов CSV/vCard/Telegram (Sprint 2)
+app.include_router(import_router.router)
 
 
 # ---------------------------------------------------------------------------

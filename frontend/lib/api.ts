@@ -214,3 +214,146 @@ export async function updateContact(id: string, data: ContactUpdate): Promise<Co
 export async function deleteContact(id: string): Promise<void> {
   return apiFetch<void>(`/api/contacts/${id}`, { method: 'DELETE' });
 }
+
+// ---------------------------------------------------------------------------
+// Sync (подключения провайдеров + синхронизация)
+// ---------------------------------------------------------------------------
+
+export interface SyncConnection {
+  id: string;
+  provider: string;
+  sync_contacts: boolean;
+  sync_calendar: boolean;
+  contacts_last_sync: string | null;
+  token_expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyncStats {
+  created: number;
+  updated: number;
+  deleted: number;
+  merged: number;
+  skipped: number;
+  errors: number;
+}
+
+export interface SyncLogEntry {
+  id: string;
+  connection_id: string;
+  type: string;
+  action: string;
+  stats: SyncStats;
+  errors: { contact_name: string; error: string }[];
+  started_at: string;
+  completed_at: string | null;
+}
+
+export async function getConnections(): Promise<SyncConnection[]> {
+  return apiFetch<SyncConnection[]>('/api/sync/connections');
+}
+
+/**
+ * Начать подключение Outlook. Возвращает authorize_url (редиректим туда),
+ * либо бросает ApiError со статусом 501, если Azure не настроен.
+ */
+export async function connectMicrosoft(): Promise<{ authorize_url: string; state: string }> {
+  return apiFetch<{ authorize_url: string; state: string }>('/api/sync/connect/microsoft', {
+    method: 'POST',
+  });
+}
+
+export async function deleteConnection(id: string): Promise<void> {
+  return apiFetch<void>(`/api/sync/connections/${id}`, { method: 'DELETE' });
+}
+
+export async function triggerSync(connectionId: string): Promise<SyncLogEntry> {
+  return apiFetch<SyncLogEntry>(`/api/sync/contacts/${connectionId}`, { method: 'POST' });
+}
+
+export async function getSyncLog(): Promise<SyncLogEntry[]> {
+  return apiFetch<SyncLogEntry[]>('/api/sync/log');
+}
+
+// ---------------------------------------------------------------------------
+// Import (файлы CSV / vCard / Telegram)
+// ---------------------------------------------------------------------------
+
+export interface ImportUploadResult {
+  import_id: string;
+  format: string;
+  count: number;
+}
+
+export interface PreviewMatch {
+  existing_id: string;
+  name: string;
+  score: number;
+  reasons: string[];
+}
+
+export interface PreviewItem {
+  index: number;
+  contact: Contact;
+  classification: 'new' | 'auto_merge' | 'suggest_merge';
+  best_match: PreviewMatch | null;
+}
+
+export interface ImportPreview {
+  import_id: string;
+  total: number;
+  new_count: number;
+  auto_merge_count: number;
+  suggest_count: number;
+  items: PreviewItem[];
+}
+
+export interface ImportDecision {
+  index: number;
+  action: 'create' | 'merge' | 'skip';
+  existing_id?: string;
+}
+
+export interface ImportConfirmResult {
+  created: number;
+  merged: number;
+  skipped: number;
+}
+
+/** Загрузка файла — multipart, поэтому Content-Type выставляет браузер сам. */
+export async function uploadImportFile(file: File): Promise<ImportUploadResult> {
+  const token = getToken();
+  const form = new FormData();
+  form.append('file', file);
+
+  const resp = await fetch(`${API_URL}/api/import/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+
+  if (resp.status === 401) {
+    clearToken();
+    throw new ApiError(401, 'Не авторизован');
+  }
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => resp.statusText);
+    throw new ApiError(resp.status, text);
+  }
+  return resp.json() as Promise<ImportUploadResult>;
+}
+
+export async function getImportPreview(importId: string): Promise<ImportPreview> {
+  return apiFetch<ImportPreview>(`/api/import/${importId}/preview`);
+}
+
+export async function confirmImport(
+  importId: string,
+  decisions: ImportDecision[] = [],
+): Promise<ImportConfirmResult> {
+  return apiFetch<ImportConfirmResult>(`/api/import/${importId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ decisions }),
+  });
+}

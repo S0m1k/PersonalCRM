@@ -23,6 +23,18 @@ class Settings(BaseSettings):
     admin_password: str = "admin"
     admin_password_hash: Optional[str] = None  # bcrypt-хеш; если задан — используется вместо admin_password
 
+    # Шифрование токенов OAuth (Sprint 2)
+    # Base64-encoded 32-байтный Fernet-ключ. Если не задан — выводится из secret_key (только для dev!).
+    # Генерация: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    token_encryption_key: Optional[str] = None
+
+    # Microsoft Graph OAuth (Sprint 2)
+    # Регистрация приложения в Azure AD: https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps
+    ms_client_id: Optional[str] = None
+    ms_client_secret: Optional[str] = None
+    ms_tenant: str = "common"          # "common" — для мультитенантных приложений
+    ms_redirect_uri: str = "http://localhost:8000/api/sync/callback/microsoft"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

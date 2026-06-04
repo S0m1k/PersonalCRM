@@ -72,7 +72,9 @@ export default function ContactsPage() {
     <main>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h1 style={{ margin: 0 }}>Контакты</h1>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <Link href="/sync" style={navLinkStyle}>Синхронизация</Link>
+          <Link href="/import" style={navLinkStyle}>Импорт</Link>
           <Link href="/contacts/new" style={linkBtnStyle}>
             + Добавить
           </Link>
@@ -208,6 +210,12 @@ const linkBtnStyle: React.CSSProperties = {
   borderRadius: 4,
   textDecoration: 'none',
   fontWeight: 600,
+};
+
+const navLinkStyle: React.CSSProperties = {
+  color: '#2563eb',
+  textDecoration: 'none',
+  fontSize: '0.9rem',
 };
 
 const tdStyle: React.CSSProperties = {
