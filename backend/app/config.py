@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     ms_tenant: str = "common"          # "common" — для мультитенантных приложений
     ms_redirect_uri: str = "http://localhost:8000/api/sync/callback/microsoft"
 
+    # Google People API OAuth (Sprint 3)
+    # Регистрация: https://console.cloud.google.com/apis/credentials
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    google_redirect_uri: str = "http://localhost:8000/api/sync/callback/google"
+
+    # Публичный базовый URL приложения (для webhook notificationUrl, Sprint 3).
+    # На проде — https-домен; локально webhooks от Microsoft не приходят.
+    public_base_url: str = "http://localhost:8000"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

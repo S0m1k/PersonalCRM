@@ -126,3 +126,75 @@ async def ms_refresh_token(refresh_token: str) -> dict:
 
     logger.info("ms_refresh_token: токены обновлены, expires_in=%s", data.get("expires_in"))
     return data
+
+
+# ===========================================================================
+# Google OAuth 2.0 (Sprint 3)
+# ===========================================================================
+
+_GOOGLE_SCOPES = "https://www.googleapis.com/auth/contacts"
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+def google_configured() -> bool:
+    """True если Google OAuth credentials заданы."""
+    return bool(settings.google_client_id and settings.google_client_secret)
+
+
+def google_authorize_url(state: str = "") -> str:
+    """Построить URL для Google OAuth authorize redirect."""
+    if not google_configured():
+        raise RuntimeError(
+            "Google OAuth не настроен. Задайте GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET в .env. "
+            "Регистрация: https://console.cloud.google.com/apis/credentials"
+        )
+
+    params = {
+        "client_id": settings.google_client_id,
+        "response_type": "code",
+        "redirect_uri": settings.google_redirect_uri,
+        "scope": _GOOGLE_SCOPES,
+        "access_type": "offline",   # чтобы получить refresh_token
+        "prompt": "consent",        # форсим refresh_token при повторном connect
+    }
+    if state:
+        params["state"] = state
+
+    return f"{_GOOGLE_AUTH_URL}?{urlencode(params)}"
+
+
+async def google_exchange_code(code: str) -> dict:
+    """Обменять authorization code на токены Google."""
+    payload = {
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "code": code,
+        "redirect_uri": settings.google_redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(_GOOGLE_TOKEN_URL, data=payload)
+        resp.raise_for_status()
+        data = resp.json()
+
+    logger.info("google_exchange_code: токены получены, expires_in=%s", data.get("expires_in"))
+    return data
+
+
+async def google_refresh_token(refresh_token: str) -> dict:
+    """Обновить истекший access_token Google через refresh_token."""
+    payload = {
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(_GOOGLE_TOKEN_URL, data=payload)
+        resp.raise_for_status()
+        data = resp.json()
+
+    # Google при refresh не возвращает новый refresh_token — сохраняем старый
+    logger.info("google_refresh_token: токены обновлены, expires_in=%s", data.get("expires_in"))
+    return data

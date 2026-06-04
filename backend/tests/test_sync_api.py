@@ -204,3 +204,47 @@ class TestMicrosoftSyncMocked:
     def test_sync_unknown_connection_404(self, client, auth):
         resp = client.post("/api/sync/contacts/000000000000000000000000", headers=auth)
         assert resp.status_code == 404
+
+
+class TestGoogleSyncMocked:
+    def test_connect_google_without_creds_501(self, client, auth):
+        resp = client.post("/api/sync/connect/google", headers=auth)
+        assert resp.status_code == 501
+        assert "Google" in resp.json()["detail"]
+
+    def test_google_sync_creates_contact(self, client, auth, monkeypatch):
+        async def fake_exchange(code: str) -> dict:
+            return {"access_token": "g-access", "refresh_token": "g-refresh", "expires_in": 3600}
+
+        person = {
+            "resourceName": "people/c777",
+            "names": [{"givenName": "Ада", "familyName": "Лавлейс"}],
+            "emailAddresses": [{"value": "ada@example.com", "type": "home"}],
+            "phoneNumbers": [{"value": "+79005556677", "type": "mobile"}],
+        }
+
+        async def fake_sync(access_token: str, sync_token=None):
+            return [person], "sync-token-abc"
+
+        monkeypatch.setattr("app.routers.sync.google_exchange_code", fake_exchange)
+        monkeypatch.setattr("app.routers.sync.sync_google_contacts", fake_sync)
+
+        cb = client.get(
+            "/api/sync/callback/google",
+            params={"code": "g-code"},
+            follow_redirects=False,
+        )
+        assert cb.status_code == 302
+        assert "connected=google" in cb.headers["location"]
+
+        conns = client.get("/api/sync/connections", headers=auth)
+        google = [c for c in conns.json() if c["provider"] == "google"]
+        assert len(google) >= 1
+
+        sync = client.post(f"/api/sync/contacts/{google[0]['id']}", headers=auth)
+        assert sync.status_code == 200, sync.text
+        assert sync.json()["stats"]["created"] == 1
+
+        found = client.get("/api/contacts/?q=ada@example.com", headers=auth)
+        assert len(found.json()) == 1
+        assert found.json()[0]["source"] == "google"

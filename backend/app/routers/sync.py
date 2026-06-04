@@ -33,7 +33,20 @@ from ..repositories import contacts as contacts_repo
 from ..repositories import sync as sync_repo
 from ..sync.dedup import find_duplicates, merge_contacts
 from ..sync.microsoft import delta_sync_contacts, fetch_outlook_contacts, map_outlook_to_crm
-from ..sync.oauth import ms_authorize_url, ms_exchange_code, ms_configured
+from ..sync.google import (
+    fetch_google_contacts,
+    is_deleted as google_is_deleted,
+    map_google_to_crm,
+    sync_google_contacts,
+)
+from ..sync.oauth import (
+    google_authorize_url,
+    google_configured,
+    google_exchange_code,
+    ms_authorize_url,
+    ms_configured,
+    ms_exchange_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +149,65 @@ async def callback_microsoft(
     return RedirectResponse(url="/sync?connected=microsoft", status_code=302)
 
 
+@router.post(
+    "/connect/google",
+    summary="Начать OAuth flow с Google",
+)
+async def connect_google(_user: AuthDep):
+    """Вернуть URL для редиректа на Google login (или 501 если не настроено)."""
+    if not google_configured():
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=(
+                "Google OAuth не настроен. Создайте OAuth-клиент в Google Cloud Console "
+                "и задайте GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI в .env. "
+                "Инструкция: https://console.cloud.google.com/apis/credentials"
+            ),
+        )
+    state = str(uuid.uuid4())
+    return {"authorize_url": google_authorize_url(state), "state": state}
+
+
+@router.get(
+    "/callback/google",
+    summary="OAuth callback от Google (редиректит в UI)",
+    include_in_schema=False,
+)
+async def callback_google(
+    db: DbDep,
+    code: Optional[str] = Query(default=None),
+    error: Optional[str] = Query(default=None),
+    state: Optional[str] = Query(default=None),
+):
+    """Обменять code Google на токены, сохранить, редиректнуть в UI."""
+    if error:
+        logger.warning("Google OAuth error: %s", error)
+        return RedirectResponse(url=f"/sync?error={error}", status_code=302)
+    if not code:
+        raise HTTPException(status_code=400, detail="Отсутствует authorization code")
+
+    try:
+        token_data = await google_exchange_code(code)
+    except Exception as exc:
+        logger.error("google_exchange_code failed: %s", exc)
+        return RedirectResponse(url="/sync?error=token_exchange_failed", status_code=302)
+
+    expires_in = token_data.get("expires_in", 3600)
+    token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+
+    await sync_repo.create_connection(
+        db,
+        provider="google",
+        access_token=token_data.get("access_token", ""),
+        refresh_token=token_data.get("refresh_token"),
+        token_expires_at=token_expires_at,
+        sync_contacts=True,
+        sync_calendar=False,
+    )
+    logger.info("Google connection created via OAuth callback")
+    return RedirectResponse(url="/sync?connected=google", status_code=302)
+
+
 @router.delete(
     "/connections/{connection_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -208,13 +280,13 @@ async def trigger_sync_contacts(
         access_token, _ = sync_repo.get_decrypted_tokens(conn)
 
         if conn.provider == "microsoft":
-            await _run_microsoft_sync(
-                db, conn, access_token, stats, errors
-            )
+            await _run_microsoft_sync(db, conn, access_token, stats, errors)
+        elif conn.provider == "google":
+            await _run_google_sync(db, conn, access_token, stats, errors)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Провайдер {conn.provider!r} не поддерживается в Sprint 2",
+                detail=f"Провайдер {conn.provider!r} не поддерживается",
             )
 
     except HTTPException:
@@ -236,6 +308,48 @@ async def trigger_sync_contacts(
     return log_entry
 
 
+async def _upsert_mapped_contact(
+    db: AsyncIOMotorDatabase,
+    mapped: dict,
+    existing_dicts: list[dict],
+    stats: SyncStats,
+    errors: list[SyncError],
+) -> None:
+    """
+    Обработать один замапленный контакт: дедупликация → merge или create.
+    Конфликты решаются стратегией last-write-wins (внешний источник дополняет
+    существующий контакт через merge_contacts; пустые поля заполняются,
+    непустые сохраняются у существующего).
+    """
+    from ..models.contact import ContactUpdate
+
+    name = f"{mapped.get('first_name', '')} {mapped.get('last_name', '')}".strip()
+    try:
+        duplicates = find_duplicates(mapped, existing_dicts)
+        if duplicates and duplicates[0]["action"] == "auto_merge":
+            best = duplicates[0]["existing_contact"]
+            merged_data = merge_contacts(best, mapped)
+            update = ContactUpdate.model_validate(
+                {k: v for k, v in merged_data.items() if k not in ("id", "created_at", "updated_at")}
+            )
+            await contacts_repo.update_contact(db, best["id"], update)
+            # Обновляем кэш, чтобы последующие контакты видели изменения
+            for i, e in enumerate(existing_dicts):
+                if e.get("id") == best["id"]:
+                    existing_dicts[i] = merged_data
+                    break
+            stats.merged += 1
+        else:
+            create_data = ContactCreate.model_validate(mapped)
+            new_c = await contacts_repo.create_contact(db, create_data)
+            existing_dicts.append(new_c.model_dump())
+            stats.created += 1
+    except Exception as exc:
+        logger.warning("Ошибка при обработке контакта %r: %s", name, exc)
+        stats.errors += 1
+        errors.append(SyncError(contact_name=name, error=str(exc)))
+
+
 async def _run_microsoft_sync(
     db: AsyncIOMotorDatabase,
     conn,
@@ -243,54 +357,63 @@ async def _run_microsoft_sync(
     stats: SyncStats,
     errors: list[SyncError],
 ) -> None:
-    """Внутренний метод: синхронизация Microsoft контактов (мутирует stats и errors)."""
-    from ..models.contact import ContactUpdate
-
+    """Синхронизация Microsoft контактов (мутирует stats и errors)."""
     if conn.contacts_delta_link:
         changes, next_delta = await delta_sync_contacts(access_token, conn.contacts_delta_link)
         outlook_contacts = [c["data"] for c in changes if c.get("action") == "upsert"]
-        # TODO Sprint 3: обработка deleted
+        # TODO Sprint 4: обработка deleted (changes с action="deleted")
     else:
         outlook_contacts = await fetch_outlook_contacts(access_token)
-        # При первом полном sync — сразу получаем delta_link для следующего раза
         _, next_delta = await delta_sync_contacts(access_token)
 
-    # Загружаем существующие контакты для дедупликации
     existing = await contacts_repo.list_contacts(db, limit=5000)
     existing_dicts = [c.model_dump() for c in existing]
 
     for oc in outlook_contacts:
-        name = f"{oc.get('givenName', '')} {oc.get('surname', '')}".strip()
-        try:
-            mapped = map_outlook_to_crm(oc)
-            duplicates = find_duplicates(mapped, existing_dicts)
+        await _upsert_mapped_contact(db, map_outlook_to_crm(oc), existing_dicts, stats, errors)
 
-            if duplicates and duplicates[0]["action"] == "auto_merge":
-                # Merge в существующий контакт
-                best = duplicates[0]["existing_contact"]
-                merged_data = merge_contacts(best, mapped)
-                update = ContactUpdate.model_validate(
-                    {k: v for k, v in merged_data.items() if k not in ("id", "created_at", "updated_at")}
-                )
-                await contacts_repo.update_contact(db, best["id"], update)
-                stats.merged += 1
-            else:
-                # Новый контакт (score < 90 или нет дублей)
-                create_data = ContactCreate.model_validate(mapped)
-                new_c = await contacts_repo.create_contact(db, create_data)
-                existing_dicts.append(new_c.model_dump())
-                stats.created += 1
-
-        except Exception as exc:
-            logger.warning("Ошибка при обработке контакта %r: %s", name, exc)
-            stats.errors += 1
-            errors.append(SyncError(contact_name=name, error=str(exc)))
-
-    # Обновляем delta_link и время sync
     await sync_repo.update_connection(
         db,
         conn.id,
         contacts_delta_link=next_delta or conn.contacts_delta_link,
+        contacts_last_sync=datetime.now(timezone.utc),
+    )
+
+
+async def _run_google_sync(
+    db: AsyncIOMotorDatabase,
+    conn,
+    access_token: str,
+    stats: SyncStats,
+    errors: list[SyncError],
+) -> None:
+    """Синхронизация Google контактов через syncToken (мутирует stats и errors)."""
+    import httpx
+
+    try:
+        contacts, next_token = await sync_google_contacts(access_token, conn.contacts_sync_token)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 410:
+            # syncToken протух — полный resync
+            logger.info("Google syncToken протух, делаем полный resync")
+            contacts, next_token = await fetch_google_contacts(access_token)
+        else:
+            raise
+
+    existing = await contacts_repo.list_contacts(db, limit=5000)
+    existing_dicts = [c.model_dump() for c in existing]
+
+    for gc in contacts:
+        if google_is_deleted(gc):
+            # TODO Sprint 4: удаление контакта при удалении в Google
+            stats.skipped += 1
+            continue
+        await _upsert_mapped_contact(db, map_google_to_crm(gc), existing_dicts, stats, errors)
+
+    await sync_repo.update_connection(
+        db,
+        conn.id,
+        contacts_sync_token=next_token or conn.contacts_sync_token,
         contacts_last_sync=datetime.now(timezone.utc),
     )
 
