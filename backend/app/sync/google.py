@@ -199,3 +199,72 @@ async def sync_google_contacts(
 
     logger.info("sync_google_contacts: %d изменений", len(contacts))
     return contacts, next_sync_token
+
+
+# ---------------------------------------------------------------------------
+# Push CRM → Google (двусторонний sync, Sprint 3)
+# ---------------------------------------------------------------------------
+
+_UPDATE_PERSON_FIELDS = "names,emailAddresses,phoneNumbers,organizations,biographies"
+
+
+def map_crm_to_google(crm_contact: dict) -> dict:
+    """Преобразование контакта CRM → формат People API для записи."""
+    body: dict = {
+        "names": [
+            {
+                "givenName": crm_contact.get("first_name", ""),
+                "familyName": crm_contact.get("last_name", ""),
+            }
+        ],
+        "emailAddresses": [
+            {"value": e["value"]} for e in crm_contact.get("emails", []) if e.get("value")
+        ],
+        "phoneNumbers": [
+            {"value": p["value"]} for p in crm_contact.get("phones", []) if p.get("value")
+        ],
+    }
+    if crm_contact.get("company") or crm_contact.get("position"):
+        body["organizations"] = [
+            {"name": crm_contact.get("company", ""), "title": crm_contact.get("position", "")}
+        ]
+    if crm_contact.get("notes"):
+        body["biographies"] = [{"value": crm_contact["notes"]}]
+    return body
+
+
+async def push_contact_to_google(access_token: str, crm_contact: dict) -> Optional[str]:
+    """
+    Создать или обновить контакт в Google.
+
+    Если external_ids.google задан — updateContact (PATCH), иначе createContact (POST).
+    Возвращает resourceName.
+    """
+    body = map_crm_to_google(crm_contact)
+    resource = (crm_contact.get("external_ids") or {}).get("google")
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        if resource:
+            # updateContact требует etag — получаем текущий контакт
+            get_resp = await client.get(
+                f"{PEOPLE_BASE}/{resource}",
+                headers=headers,
+                params={"personFields": "metadata"},
+            )
+            get_resp.raise_for_status()
+            etag = get_resp.json().get("etag")
+            body["etag"] = etag
+            resp = await client.patch(
+                f"{PEOPLE_BASE}/{resource}:updateContact",
+                headers=headers,
+                params={"updatePersonFields": _UPDATE_PERSON_FIELDS},
+                json=body,
+            )
+            resp.raise_for_status()
+            return resource
+        resp = await client.post(
+            f"{PEOPLE_BASE}/people:createContact", headers=headers, json=body
+        )
+        resp.raise_for_status()
+        return resp.json().get("resourceName")

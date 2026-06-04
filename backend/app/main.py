@@ -13,6 +13,7 @@ from .routers import auth as auth_router
 from .routers import contacts as contacts_router
 from .routers import import_ as import_router
 from .routers import sync as sync_router
+from .routers import webhooks as webhooks_router
 
 
 @asynccontextmanager
@@ -54,6 +55,9 @@ app.include_router(sync_router.router)
 
 # Import: /api/import/* — загрузка файлов CSV/vCard/Telegram (Sprint 2)
 app.include_router(import_router.router)
+
+# Webhooks: /api/webhooks/* — публичные эндпоинты для уведомлений Microsoft (Sprint 3)
+app.include_router(webhooks_router.router)
 
 
 # ---------------------------------------------------------------------------

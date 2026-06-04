@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -22,6 +23,9 @@ import httpx
 logger = logging.getLogger(__name__)
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+# Microsoft подписки на контакты живут максимум ~3 дня. Берём с запасом.
+SUBSCRIPTION_TTL = timedelta(days=2, hours=12)
 
 # Поля контакта, которые запрашиваем из Graph API
 _CONTACT_SELECT = (
@@ -191,3 +195,112 @@ async def delta_sync_contacts(
         "получен" if next_delta else "отсутствует",
     )
     return changes, next_delta
+
+
+# ---------------------------------------------------------------------------
+# Push CRM → Outlook (двусторонний sync, Sprint 3)
+# ---------------------------------------------------------------------------
+
+
+def map_crm_to_outlook(crm_contact: dict) -> dict:
+    """Преобразование контакта CRM → формат Microsoft Graph для записи."""
+    mobile = next(
+        (p["value"] for p in crm_contact.get("phones", []) if p.get("label") == "мобильный"),
+        None,
+    )
+    business = [
+        p["value"] for p in crm_contact.get("phones", []) if p.get("label") == "рабочий"
+    ]
+    body: dict = {
+        "givenName": crm_contact.get("first_name", ""),
+        "surname": crm_contact.get("last_name", ""),
+        "companyName": crm_contact.get("company", ""),
+        "jobTitle": crm_contact.get("position", ""),
+        "emailAddresses": [
+            {"address": e["value"], "name": e.get("label", "")}
+            for e in crm_contact.get("emails", [])
+            if e.get("value")
+        ],
+        "businessPhones": business,
+        "personalNotes": crm_contact.get("notes", ""),
+    }
+    if mobile:
+        body["mobilePhone"] = mobile
+    return body
+
+
+async def push_contact_to_outlook(access_token: str, crm_contact: dict) -> Optional[str]:
+    """
+    Создать или обновить контакт в Outlook.
+
+    Если в external_ids.outlook есть id — обновляем (PATCH), иначе создаём (POST).
+    Возвращает outlook id (новый при создании, существующий при обновлении).
+    """
+    body = map_crm_to_outlook(crm_contact)
+    outlook_id = (crm_contact.get("external_ids") or {}).get("outlook")
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        if outlook_id:
+            resp = await client.patch(
+                f"{GRAPH_BASE}/me/contacts/{outlook_id}", headers=headers, json=body
+            )
+            resp.raise_for_status()
+            return outlook_id
+        resp = await client.post(f"{GRAPH_BASE}/me/contacts", headers=headers, json=body)
+        resp.raise_for_status()
+        return resp.json().get("id")
+
+
+# ---------------------------------------------------------------------------
+# Webhooks / подписки на изменения контактов (Sprint 3)
+# ---------------------------------------------------------------------------
+
+
+def _expiry_iso() -> str:
+    """ISO-время истечения подписки (UTC, Z-формат, как требует Graph)."""
+    return (datetime.now(timezone.utc) + SUBSCRIPTION_TTL).strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
+
+
+async def create_contact_subscription(
+    access_token: str, notification_url: str, client_state: str
+) -> dict:
+    """
+    Создать подписку Graph на изменения контактов.
+    notification_url должен быть публичным HTTPS-эндпоинтом.
+    Возвращает dict подписки (с id, expirationDateTime).
+    """
+    body = {
+        "changeType": "created,updated,deleted",
+        "notificationUrl": notification_url,
+        "resource": "me/contacts",
+        "expirationDateTime": _expiry_iso(),
+        "clientState": client_state,
+    }
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(f"{GRAPH_BASE}/subscriptions", headers=headers, json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def renew_contact_subscription(access_token: str, subscription_id: str) -> dict:
+    """Продлить срок действия подписки (PATCH expirationDateTime)."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    body = {"expirationDateTime": _expiry_iso()}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.patch(
+            f"{GRAPH_BASE}/subscriptions/{subscription_id}", headers=headers, json=body
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def delete_contact_subscription(access_token: str, subscription_id: str) -> None:
+    """Удалить подписку."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.delete(
+            f"{GRAPH_BASE}/subscriptions/{subscription_id}", headers=headers
+        )
+        resp.raise_for_status()

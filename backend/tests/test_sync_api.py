@@ -248,3 +248,107 @@ class TestGoogleSyncMocked:
         found = client.get("/api/contacts/?q=ada@example.com", headers=auth)
         assert len(found.json()) == 1
         assert found.json()[0]["source"] == "google"
+
+
+class TestPushContact:
+    def test_push_to_outlook_saves_external_id(self, client, auth, monkeypatch):
+        # Подключение Microsoft через мок-callback
+        async def fake_exchange(code: str) -> dict:
+            return {"access_token": "a", "refresh_token": "r", "expires_in": 3600}
+
+        async def fake_push(access_token: str, crm_contact: dict):
+            return "NEW-OUTLOOK-ID"
+
+        monkeypatch.setattr("app.routers.sync.ms_exchange_code", fake_exchange)
+        monkeypatch.setattr("app.routers.sync.push_contact_to_outlook", fake_push)
+
+        client.get("/api/sync/callback/microsoft", params={"code": "c"}, follow_redirects=False)
+        conns = client.get("/api/sync/connections", headers=auth).json()
+        conn_id = [c for c in conns if c["provider"] == "microsoft"][0]["id"]
+
+        # Создаём контакт без external_ids.outlook
+        created = client.post(
+            "/api/contacts/",
+            headers=auth,
+            json={"first_name": "Толкатель", "last_name": "Тестов"},
+        ).json()
+
+        # Push
+        resp = client.post(
+            f"/api/sync/contacts/{conn_id}/push/{created['id']}", headers=auth
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["external_id"] == "NEW-OUTLOOK-ID"
+
+        # external_ids.outlook сохранён в контакте
+        got = client.get(f"/api/contacts/{created['id']}", headers=auth).json()
+        assert got["external_ids"]["outlook"] == "NEW-OUTLOOK-ID"
+
+    def test_push_unknown_contact_404(self, client, auth, monkeypatch):
+        async def fake_exchange(code: str) -> dict:
+            return {"access_token": "a", "refresh_token": "r", "expires_in": 3600}
+
+        monkeypatch.setattr("app.routers.sync.ms_exchange_code", fake_exchange)
+        client.get("/api/sync/callback/microsoft", params={"code": "c2"}, follow_redirects=False)
+        conns = client.get("/api/sync/connections", headers=auth).json()
+        conn_id = [c for c in conns if c["provider"] == "microsoft"][0]["id"]
+
+        resp = client.post(
+            f"/api/sync/contacts/{conn_id}/push/000000000000000000000000", headers=auth
+        )
+        assert resp.status_code == 404
+
+
+class TestWebhooks:
+    def test_validation_handshake(self, client):
+        resp = client.post(
+            "/api/webhooks/microsoft", params={"validationToken": "tok-12345"}
+        )
+        assert resp.status_code == 200
+        assert resp.text == "tok-12345"
+        assert resp.headers["content-type"].startswith("text/plain")
+
+    def test_notification_triggers_background_sync(self, client, auth, monkeypatch):
+        async def fake_exchange(code: str) -> dict:
+            return {"access_token": "a", "refresh_token": "r", "expires_in": 3600}
+
+        async def fake_fetch(access_token: str):
+            return [{
+                "id": "WH-1",
+                "givenName": "Вебхук",
+                "surname": "Контакт",
+                "emailAddresses": [{"address": "webhook@example.com", "name": "x"}],
+            }]
+
+        async def fake_delta(access_token: str, delta_link=None):
+            return [], "d"
+
+        monkeypatch.setattr("app.routers.sync.ms_exchange_code", fake_exchange)
+        monkeypatch.setattr("app.routers.sync.fetch_outlook_contacts", fake_fetch)
+        monkeypatch.setattr("app.routers.sync.delta_sync_contacts", fake_delta)
+
+        client.get("/api/sync/callback/microsoft", params={"code": "wh"}, follow_redirects=False)
+        conns = client.get("/api/sync/connections", headers=auth).json()
+        conn_id = [c for c in conns if c["provider"] == "microsoft"][-1]["id"]
+
+        # Уведомление с clientState = connection_id
+        resp = client.post(
+            "/api/webhooks/microsoft",
+            json={"value": [{"clientState": conn_id, "subscriptionId": "sub1"}]},
+        )
+        assert resp.status_code == 202
+
+        # Фоновая задача в TestClient выполняется до возврата — контакт создан
+        found = client.get("/api/contacts/?q=webhook@example.com", headers=auth)
+        assert len(found.json()) == 1
+
+        # Запись в логе с action=webhook
+        logs = client.get("/api/sync/log", headers=auth).json()
+        assert any(l["action"] == "webhook" for l in logs)
+
+    def test_notification_unknown_state_is_202(self, client):
+        resp = client.post(
+            "/api/webhooks/microsoft",
+            json={"value": [{"clientState": "000000000000000000000000"}]},
+        )
+        assert resp.status_code == 202

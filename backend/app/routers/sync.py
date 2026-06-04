@@ -26,17 +26,26 @@ from fastapi.responses import RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from ..auth import get_current_user
+from ..config import settings
 from ..db import get_db
 from ..models.contact import ContactCreate
 from ..models.sync import SyncConnectionOut, SyncLog, SyncStats, SyncError
 from ..repositories import contacts as contacts_repo
 from ..repositories import sync as sync_repo
 from ..sync.dedup import find_duplicates, merge_contacts
-from ..sync.microsoft import delta_sync_contacts, fetch_outlook_contacts, map_outlook_to_crm
+from ..sync.microsoft import (
+    create_contact_subscription,
+    delete_contact_subscription,
+    delta_sync_contacts,
+    fetch_outlook_contacts,
+    map_outlook_to_crm,
+    push_contact_to_outlook,
+)
 from ..sync.google import (
     fetch_google_contacts,
     is_deleted as google_is_deleted,
     map_google_to_crm,
+    push_contact_to_google,
     sync_google_contacts,
 )
 from ..sync.oauth import (
@@ -416,6 +425,133 @@ async def _run_google_sync(
         contacts_sync_token=next_token or conn.contacts_sync_token,
         contacts_last_sync=datetime.now(timezone.utc),
     )
+
+
+# ---------------------------------------------------------------------------
+# Push CRM → внешний сервис (двусторонний sync)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/contacts/{connection_id}/push/{contact_id}",
+    summary="Отправить контакт CRM во внешний сервис (Outlook/Google)",
+)
+async def push_contact(
+    connection_id: str,
+    contact_id: str,
+    db: DbDep,
+    _user: AuthDep,
+):
+    """
+    Создать или обновить контакт во внешнем сервисе подключения.
+    После создания сохраняет внешний ID в external_ids контакта.
+    """
+    from ..models.contact import ContactUpdate
+
+    conn = await sync_repo.get_connection(db, connection_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Подключение не найдено")
+
+    contact = await contacts_repo.get_contact_by_id(db, contact_id)
+    if contact is None:
+        raise HTTPException(status_code=404, detail="Контакт не найден")
+
+    access_token, _ = sync_repo.get_decrypted_tokens(conn)
+    crm_dict = contact.model_dump()
+
+    try:
+        if conn.provider == "microsoft":
+            external_id = await push_contact_to_outlook(access_token, crm_dict)
+            field = "outlook"
+        elif conn.provider == "google":
+            external_id = await push_contact_to_google(access_token, crm_dict)
+            field = "google"
+        else:
+            raise HTTPException(status_code=400, detail=f"Провайдер {conn.provider!r} не поддерживается")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("push_contact failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Ошибка при отправке во внешний сервис: {exc}")
+
+    # Сохраняем внешний ID обратно в контакт
+    if external_id:
+        ext = dict(contact.external_ids.model_dump())
+        ext[field] = external_id
+        await contacts_repo.update_contact(db, contact_id, ContactUpdate(external_ids=ext))
+
+    return {"status": "ok", "provider": conn.provider, "external_id": external_id}
+
+
+# ---------------------------------------------------------------------------
+# Webhooks: подписка на изменения (Microsoft)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/connections/{connection_id}/subscribe",
+    summary="Подписаться на изменения контактов (Microsoft webhook)",
+)
+async def subscribe_webhook(connection_id: str, db: DbDep, _user: AuthDep):
+    """
+    Создать Graph-подписку на изменения контактов.
+
+    notificationUrl формируется из PUBLIC_BASE_URL — он ДОЛЖЕН быть публичным
+    HTTPS-адресом, иначе Microsoft отклонит подписку (на localhost не работает).
+    """
+    conn = await sync_repo.get_connection(db, connection_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Подключение не найдено")
+    if conn.provider != "microsoft":
+        raise HTTPException(status_code=400, detail="Вебхуки поддерживаются только для Microsoft")
+
+    notification_url = f"{settings.public_base_url.rstrip('/')}/api/webhooks/microsoft"
+    if not notification_url.startswith("https://"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Для вебхуков нужен публичный HTTPS-адрес. Задайте PUBLIC_BASE_URL "
+                "(https://...) — на localhost уведомления Microsoft не приходят."
+            ),
+        )
+
+    access_token, _ = sync_repo.get_decrypted_tokens(conn)
+    try:
+        sub = await create_contact_subscription(
+            access_token, notification_url, client_state=connection_id
+        )
+    except Exception as exc:
+        logger.error("create subscription failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Не удалось создать подписку: {exc}")
+
+    await sync_repo.update_connection(
+        db,
+        connection_id,
+        webhook_subscription_id=sub.get("id"),
+        webhook_expires_at=datetime.now(timezone.utc) + timedelta(days=2, hours=12),
+    )
+    return {"status": "ok", "subscription_id": sub.get("id")}
+
+
+@router.post(
+    "/connections/{connection_id}/unsubscribe",
+    summary="Отписаться от изменений контактов",
+)
+async def unsubscribe_webhook(connection_id: str, db: DbDep, _user: AuthDep):
+    """Удалить Graph-подписку, если есть."""
+    conn = await sync_repo.get_connection(db, connection_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Подключение не найдено")
+    if conn.webhook_subscription_id:
+        access_token, _ = sync_repo.get_decrypted_tokens(conn)
+        try:
+            await delete_contact_subscription(access_token, conn.webhook_subscription_id)
+        except Exception as exc:
+            logger.warning("delete subscription failed: %s", exc)
+        await sync_repo.update_connection(
+            db, connection_id, webhook_subscription_id=None, webhook_expires_at=None
+        )
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
