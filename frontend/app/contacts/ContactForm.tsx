@@ -9,7 +9,13 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createContact, updateContact, type Contact, type ContactCreate } from '../../lib/api';
+import {
+  createContact,
+  updateContact,
+  type Contact,
+  type ContactCreate,
+  type CustomField,
+} from '../../lib/api';
 
 interface Props {
   /** Если передан — режим редактирования, иначе — создание. */
@@ -46,6 +52,9 @@ export default function ContactForm({ existing }: Props) {
   const [emails, setEmails] = useState<EmailRow[]>(
     existing?.emails?.length ? existing.emails : [{ value: '', label: 'личный' }],
   );
+  const [customFields, setCustomFields] = useState<CustomField[]>(
+    existing?.custom_fields ?? [],
+  );
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +84,19 @@ export default function ContactForm({ existing }: Props) {
     setEmails((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // Произвольные поля (custom_fields)
+  function setCustomField(index: number, field: 'key' | 'value', val: string) {
+    setCustomFields((prev) => prev.map((cf, i) => (i === index ? { ...cf, [field]: val } : cf)));
+  }
+
+  function addCustomField() {
+    setCustomFields((prev) => [...prev, { key: '', value: '' }]);
+  }
+
+  function removeCustomField(index: number) {
+    setCustomFields((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -92,6 +114,7 @@ export default function ContactForm({ existing }: Props) {
       priority,
       phones: phones.filter((p) => p.value.trim()),
       emails: emails.filter((em) => em.value.trim()),
+      custom_fields: customFields.filter((cf) => cf.key.trim()),
     };
 
     try {
@@ -214,6 +237,34 @@ export default function ContactForm({ existing }: Props) {
           </div>
         ))}
         <button type="button" onClick={addEmail} style={addBtn}>+ Добавить email</button>
+      </fieldset>
+
+      {/* Свои поля (custom_fields) */}
+      <fieldset style={fieldsetStyle}>
+        <legend style={legendStyle}>Свои поля</legend>
+        {customFields.length === 0 && (
+          <p style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', color: '#888' }}>
+            Произвольные пары «название → значение» (например: «Telegram → @ivan», «Хобби → рыбалка»).
+          </p>
+        )}
+        {customFields.map((cf, i) => (
+          <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+            <input
+              value={cf.key}
+              onChange={(e) => setCustomField(i, 'key', e.target.value)}
+              placeholder="Название поля"
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <input
+              value={cf.value}
+              onChange={(e) => setCustomField(i, 'value', e.target.value)}
+              placeholder="Значение"
+              style={{ ...inputStyle, flex: 2 }}
+            />
+            <button type="button" onClick={() => removeCustomField(i)} style={removeBtn}>×</button>
+          </div>
+        ))}
+        <button type="button" onClick={addCustomField} style={addBtn}>+ Добавить своё поле</button>
       </fieldset>
 
       {/* Заметки */}
