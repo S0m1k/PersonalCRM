@@ -3,12 +3,16 @@ PersonalCRM — FastAPI backend.
 Точка входа: uvicorn app.main:app
 """
 
+import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import close_db, connect_db, get_db
+
+logger = logging.getLogger(__name__)
 from .routers import auth as auth_router
 from .routers import contacts as contacts_router
 from .routers import import_ as import_router
@@ -18,9 +22,29 @@ from .routers import webhooks as webhooks_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle-хук: подключаем и закрываем MongoDB вместе с приложением."""
+    """Lifecycle-хук: MongoDB + фоновый планировщик."""
     await connect_db()
+
+    # Планировщик отключается в тестах (ENABLE_SCHEDULER=false), чтобы не
+    # запускать фоновые задачи под TestClient.
+    scheduler_on = os.getenv("ENABLE_SCHEDULER", "true").lower() != "false"
+    if scheduler_on:
+        try:
+            from .sync.scheduler import start_scheduler
+
+            start_scheduler()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Не удалось запустить планировщик: %s", exc)
+
     yield
+
+    if scheduler_on:
+        try:
+            from .sync.scheduler import shutdown_scheduler
+
+            shutdown_scheduler()
+        except Exception:  # noqa: BLE001
+            pass
     await close_db()
 
 
