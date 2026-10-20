@@ -1,0 +1,12 @@
+sequenceDiagram
+    actor U as Вы
+    participant APP as Строка ввода
+    participant AI as ИИ
+    participant DB as База
+
+    U->>APP: «как зовут жену Олега?»
+    APP->>DB: Сначала простой поиск: «Олег»
+    DB-->>APP: Олег Борисов (единственный)
+    APP->>AI: Вопрос + карточка Олега
+    AI-->>APP: «Светлана. Записано 14.03 со слов Олега»
+    APP-->>U: Ответ + ссылка на карточку

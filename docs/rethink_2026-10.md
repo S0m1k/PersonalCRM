@@ -117,6 +117,7 @@ Question {
 
 ## 4. Что меняется в планах (предложение)
 - Sprint 4 «AI-merge / LinkedIn» → **заменить**. LinkedIn выкидываем: нет API, ToS запрещает скрейпинг.
-- Хостинг: **Timeweb → своя машина + Cloudflare Tunnel**.
+- Хостинг: **Timeweb → сначала рабочий ПК, затем своя машина + Cloudflare Tunnel**.
+- Презентация для согласования: [vision/PersonalCRM_vision.md](vision/PersonalCRM_vision.md).
 - Новый порядок — см. [sprints.md](sprints.md) (Sprint 4–9).
 - UX: главный экран — **одна строка ввода** (поиск + команда + захват), карточка открывается в один клик, без многоуровневого меню.

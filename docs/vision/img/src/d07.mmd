@@ -1,0 +1,13 @@
+stateDiagram-v2
+    state "Открыт" as open
+    state "Ждёт встречи или даты" as remind
+    state "Отвечен" as answered
+    state "Неактуален" as dropped
+    [*] --> open: добавил вопрос (сам или ИИ)
+    open --> remind: спросить на встрече
+    remind --> open: встреча прошла, ответа нет
+    open --> answered: ответ записан
+    remind --> answered: ответ записан
+    open --> dropped: больше не нужен
+    answered --> [*]
+    dropped --> [*]

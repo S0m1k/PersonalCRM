@@ -1,0 +1,33 @@
+flowchart TB
+    START(["Открыл приложение"]) --> HOME
+
+    subgraph NAV["Основные вкладки"]
+        HOME["🏠 Главная<br/>строка ввода + сегодня"]
+        CONTACTS["👥 Контакты<br/>список и поиск"]
+        QUESTIONS["❓ Вопросы<br/>все открытые"]
+        CAL["📅 Календарь<br/>встречи и задачи"]
+        AI["💬 Помощник<br/>разговор с ИИ"]
+    end
+
+    subgraph SERVICE["Служебные (редко)"]
+        SYNC["🔄 Синхронизация<br/>и импорт"]
+        SETTINGS["⚙️ Настройки"]
+    end
+
+    HOME --> CARD
+    CONTACTS --> CARD
+    QUESTIONS --> CARD
+    CAL --> CARD
+    AI --> CARD
+
+    subgraph CARD["📇 Карточка человека"]
+        C1["Обзор"]
+        C2["Вопросы"]
+        C3["История"]
+        C4["Встречи и задачи"]
+        C5["Связи"]
+        C6["Все поля"]
+    end
+
+    HOME -.-> SYNC
+    HOME -.-> SETTINGS

@@ -1,0 +1,11 @@
+sequenceDiagram
+    actor U as Вы
+    participant PH as Телефон / Outlook
+    participant APP as PersonalCRM
+    participant G as Google
+
+    U->>PH: Поменял номер Петра в телефоне
+    PH->>APP: Синхронизация (каждые несколько минут)
+    APP->>APP: Обновил карточку, записал в историю
+    APP->>G: Отправил новый номер и в Google
+    Note over U,G: Номер одинаковый везде

@@ -1,0 +1,29 @@
+flowchart TB
+    subgraph USER["Вы"]
+        PC["💻 Компьютер<br/>браузер"]
+        PHONE["📱 Телефон<br/>браузер / звонилка"]
+    end
+
+    subgraph HOME["Наша машина — всё здесь"]
+        WEB["Сайт CRM<br/>(экраны)"]
+        API["Мозг CRM<br/>(логика, синхронизация)"]
+        DB[("База контактов")]
+        LLM["ИИ: своя модель Qwen"]
+        STT["Распознавание голоса"]
+        BK["Резервные копии"]
+    end
+
+    subgraph EXT["Внешние сервисы (ваши аккаунты)"]
+        MS["Microsoft<br/>Outlook, календарь, To Do"]
+        GG["Google<br/>Контакты, календарь, Tasks"]
+    end
+
+    PC --> WEB
+    PHONE --> WEB
+    WEB --> API
+    API <--> DB
+    API <--> LLM
+    API <--> STT
+    DB --> BK
+    API <-- "синхронизация" --> MS
+    API <-- "синхронизация" --> GG

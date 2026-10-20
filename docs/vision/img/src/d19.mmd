@@ -1,0 +1,64 @@
+erDiagram
+    CONTACT ||--o{ QUESTION : "вопросы к нему"
+    CONTACT ||--o{ NOTE : "история и заметки"
+    CONTACT ||--o{ TASK : "задачи"
+    CONTACT }o--o{ EVENT : "участник встреч"
+    CONTACT ||--o{ RELATIONSHIP : "связи"
+    CONTACT }o--|| TEMPLATE : "шаблон карточки"
+    TEMPLATE ||--o{ FIELD_DEF : "набор полей"
+    CONTACT ||--o{ FIELD_VALUE : "значения своих полей"
+    FIELD_DEF ||--o{ FIELD_VALUE : "тип поля"
+    SYNC_ACCOUNT ||--o{ CONTACT : "источник"
+
+    CONTACT {
+        string name "Имя, фамилия"
+        list phones "Телефоны"
+        list emails "Почта"
+        string company "Компания, должность"
+        string city "Город"
+        date birthday "День рождения"
+        string category "Категория, приоритет"
+        date last_contact "Последний контакт"
+        map external_ids "ID в Outlook, Google"
+    }
+    QUESTION {
+        string text "Что спросить"
+        string status "открыт / отвечен / неактуален"
+        string answer "Ответ"
+        date ask_at "Когда спросить"
+        string source "Вы / ИИ / встреча"
+    }
+    NOTE {
+        date date "Когда"
+        string kind "встреча / звонок / заметка / изменение"
+        string text "Текст"
+        string author "Вы / ИИ / синхронизация"
+    }
+    TASK {
+        string title "Что сделать"
+        date due "Когда"
+        string external_id "ID в To Do / Google Tasks"
+    }
+    EVENT {
+        datetime start "Начало"
+        string title "Тема"
+        string external_id "ID в календаре"
+    }
+    TEMPLATE {
+        string name "Клиент, Партнёр, Друг"
+    }
+    FIELD_DEF {
+        string name "Название поля"
+        string type "текст / дата / список / ссылка"
+    }
+    FIELD_VALUE {
+        string value "Значение"
+        string source "Откуда взялось"
+    }
+    RELATIONSHIP {
+        string label "жена, коллега, познакомил"
+    }
+    SYNC_ACCOUNT {
+        string provider "Outlook / Google / телефон"
+        string token "Доступ (зашифрован)"
+    }

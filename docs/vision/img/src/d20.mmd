@@ -1,0 +1,12 @@
+flowchart LR
+    subgraph SRC["Источники"]
+        O["Outlook<br/>(+ телефон через Outlook)"]
+        G["Google<br/>(+ Android)"]
+        P["Телефон напрямую<br/>(этап 2, CardDAV)"]
+        F["Файлы: CSV, vCard,<br/>Telegram"]
+    end
+    O <--> M
+    G <--> M
+    P <--> M
+    F --> M
+    M{"Склейка дублей<br/>по телефону, почте, имени"} --> DB[("Единая база")]
