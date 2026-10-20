@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from mongomock_motor import AsyncMongoMockClient
 
 from app.repositories import sync as sync_repo
@@ -20,6 +21,16 @@ async def test_jobs_registered():
         assert {"periodic_sync", "refresh_tokens", "renew_webhooks"} <= ids
     finally:
         sch.shutdown_scheduler()
+
+
+def test_periodic_sync_interval_from_settings(monkeypatch):
+    """Интервал periodic_sync берётся из SYNC_INTERVAL_MINUTES."""
+    monkeypatch.setattr(sch.settings, "sync_interval_minutes", 5)
+    fresh = AsyncIOScheduler(timezone="UTC")
+
+    sch.register_jobs(fresh)
+
+    assert fresh.get_job("periodic_sync").trigger.interval == timedelta(minutes=5)
 
 
 async def test_refresh_expiring_token(monkeypatch):

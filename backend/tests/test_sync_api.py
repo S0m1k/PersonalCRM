@@ -46,6 +46,16 @@ def auth(client):
     return {"Authorization": f"Bearer {get_token(client)}"}
 
 
+def issue_state(client: TestClient, auth: dict, monkeypatch, provider: str) -> str:
+    """Получить настоящий OAuth state через connect — как это делает браузер."""
+    prefix = "ms" if provider == "microsoft" else "google"
+    monkeypatch.setattr(f"app.routers.sync.{prefix}_configured", lambda: True)
+    monkeypatch.setattr(f"app.routers.sync.{prefix}_authorize_url", lambda state: "https://login.example")
+    resp = client.post(f"/api/sync/connect/{provider}", headers=auth)
+    assert resp.status_code == 200, resp.text
+    return resp.json()["state"]
+
+
 # ---------------------------------------------------------------------------
 # Connect без Azure-кредов → понятная ошибка, не падение
 # ---------------------------------------------------------------------------
@@ -170,7 +180,7 @@ class TestMicrosoftSyncMocked:
         # 1. Создаём подключение через callback (не следуем за редиректом)
         cb = client.get(
             "/api/sync/callback/microsoft",
-            params={"code": "auth-code-123"},
+            params={"code": "auth-code-123", "state": issue_state(client, auth, monkeypatch, "microsoft")},
             follow_redirects=False,
         )
         assert cb.status_code == 302
@@ -231,7 +241,7 @@ class TestGoogleSyncMocked:
 
         cb = client.get(
             "/api/sync/callback/google",
-            params={"code": "g-code"},
+            params={"code": "g-code", "state": issue_state(client, auth, monkeypatch, "google")},
             follow_redirects=False,
         )
         assert cb.status_code == 302
@@ -262,7 +272,11 @@ class TestPushContact:
         monkeypatch.setattr("app.routers.sync.ms_exchange_code", fake_exchange)
         monkeypatch.setattr("app.routers.sync.push_contact_to_outlook", fake_push)
 
-        client.get("/api/sync/callback/microsoft", params={"code": "c"}, follow_redirects=False)
+        client.get(
+            "/api/sync/callback/microsoft",
+            params={"code": "c", "state": issue_state(client, auth, monkeypatch, "microsoft")},
+            follow_redirects=False,
+        )
         conns = client.get("/api/sync/connections", headers=auth).json()
         conn_id = [c for c in conns if c["provider"] == "microsoft"][0]["id"]
 
@@ -289,7 +303,11 @@ class TestPushContact:
             return {"access_token": "a", "refresh_token": "r", "expires_in": 3600}
 
         monkeypatch.setattr("app.routers.sync.ms_exchange_code", fake_exchange)
-        client.get("/api/sync/callback/microsoft", params={"code": "c2"}, follow_redirects=False)
+        client.get(
+            "/api/sync/callback/microsoft",
+            params={"code": "c2", "state": issue_state(client, auth, monkeypatch, "microsoft")},
+            follow_redirects=False,
+        )
         conns = client.get("/api/sync/connections", headers=auth).json()
         conn_id = [c for c in conns if c["provider"] == "microsoft"][0]["id"]
 
@@ -327,7 +345,11 @@ class TestWebhooks:
         monkeypatch.setattr("app.routers.sync.fetch_outlook_contacts", fake_fetch)
         monkeypatch.setattr("app.routers.sync.delta_sync_contacts", fake_delta)
 
-        client.get("/api/sync/callback/microsoft", params={"code": "wh"}, follow_redirects=False)
+        client.get(
+            "/api/sync/callback/microsoft",
+            params={"code": "wh", "state": issue_state(client, auth, monkeypatch, "microsoft")},
+            follow_redirects=False,
+        )
         conns = client.get("/api/sync/connections", headers=auth).json()
         conn_id = [c for c in conns if c["provider"] == "microsoft"][-1]["id"]
 

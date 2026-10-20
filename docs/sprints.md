@@ -93,11 +93,14 @@
 
 **Цель:** вся система крутится на рабочем ПК; реальные Outlook и Google подключены.
 
-- [ ] `docker-compose` поднимает всё (MongoDB, backend, frontend) одной командой на этом ПК
-- [ ] Реальные секреты вместо dev-дефолтов (`SECRET_KEY`, пароль, ключ Fernet)
-- [ ] Регистрация приложений в Azure AD и Google Cloud с redirect на `http://localhost` (оба провайдера это разрешают)
-- [ ] Боевая проверка OAuth, pull/push; вебхуков локально нет → periodic delta sync каждые несколько минут
-- [ ] Резервная копия MongoDB + проверка восстановления
+- [x] `docker compose up -d --build` поднимает всё (MongoDB, backend, frontend на :3300), порты только на 127.0.0.1
+- [x] Реальные секреты вместо dev-дефолтов: `scripts/init_env.py` генерирует `SECRET_KEY`, пароль, ключ Fernet
+- [x] Исправлено перед боевым запуском: OAuth callback редиректил на бэкенд, а не во фронтенд (`FRONTEND_URL`); `state` не проверялся (CSRF/подмена аккаунта); Microsoft запрашивал только `Contacts.Read` (push в Outlook упал бы с 403); тесты зависели от локального `.env`
+- [x] Вебхуков локально нет → интервал фонового sync настраивается (`SYNC_INTERVAL_MINUTES=5`)
+- [x] Резервная копия MongoDB + проверка восстановления (`scripts/backup.py`, проверено вживую)
+- [x] Инструкция по регистрации: [setup_oauth.md](setup_oauth.md)
+- [ ] Регистрация приложений в Microsoft Entra и Google Cloud — **нужен владелец аккаунтов**
+- [ ] Боевая проверка OAuth, pull/push на реальных аккаунтах
 
 **Definition of Done:** на ПК открываю CRM, подключаю свои Outlook и Google — контакты пришли без дублей, правка в CRM ушла обратно.
 

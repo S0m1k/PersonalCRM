@@ -2,7 +2,7 @@
 Фоновый планировщик (APScheduler) для Sprint 3.
 
 Задачи:
-  - periodic_sync           каждые 30 мин: delta/incremental sync всех подключений
+  - periodic_sync           каждые SYNC_INTERVAL_MINUTES (по умолч. 30): delta sync всех подключений
                             (fallback, если вебхуки не сработали)
   - refresh_expiring_tokens каждые 15 мин: проактивно обновляет токены,
                             истекающие в ближайшие 10 минут
@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from ..config import settings
 from ..db import get_db
 from ..models.sync import SyncError, SyncStats
 from ..repositories import sync as sync_repo
@@ -131,13 +132,24 @@ async def renew_webhooks() -> None:
 # ---------------------------------------------------------------------------
 
 
+def register_jobs(target: AsyncIOScheduler) -> None:
+    """Добавить фоновые задачи в планировщик (без запуска)."""
+    target.add_job(
+        periodic_sync,
+        "interval",
+        minutes=settings.sync_interval_minutes,
+        id="periodic_sync",
+        replace_existing=True,
+    )
+    target.add_job(refresh_expiring_tokens, "interval", minutes=15, id="refresh_tokens", replace_existing=True)
+    target.add_job(renew_webhooks, "interval", hours=12, id="renew_webhooks", replace_existing=True)
+
+
 def start_scheduler() -> None:
     """Зарегистрировать задачи и запустить планировщик."""
     if scheduler.running:
         return
-    scheduler.add_job(periodic_sync, "interval", minutes=30, id="periodic_sync", replace_existing=True)
-    scheduler.add_job(refresh_expiring_tokens, "interval", minutes=15, id="refresh_tokens", replace_existing=True)
-    scheduler.add_job(renew_webhooks, "interval", hours=12, id="renew_webhooks", replace_existing=True)
+    register_jobs(scheduler)
     scheduler.start()
     logger.info("Фоновый планировщик запущен (periodic_sync/refresh_tokens/renew_webhooks)")
 

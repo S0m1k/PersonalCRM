@@ -1,13 +1,17 @@
+# Вся система одной командой:  docker compose up -d --build   → http://localhost:3300
+# Перед первым запуском:        python scripts/init_env.py   (создаст backend/.env с секретами)
+#
+# Порты открыты только на 127.0.0.1 — снаружи этого компьютера CRM недоступна.
+
 services:
 
   mongo:
     image: mongo:7
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
-    # Для локальной разработки без аутентификации — в продакшне добавить MONGO_INITDB_ROOT_USERNAME/PASSWORD
     environment:
       MONGO_INITDB_DATABASE: personalcrm
 
@@ -15,17 +19,26 @@ services:
     build: ./backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       - mongo
+    env_file:
+      - ./backend/.env
     environment:
-      # Имя сервиса "mongo" резолвится внутри docker network
+      # Внутри docker-сети база доступна по имени сервиса — перекрывает значение из .env
       MONGODB_URI: mongodb://mongo:27017
-      DB_NAME: personalcrm
-      SECRET_KEY: change-me-in-production
-    # Для разработки: монтируем код, чтобы изменения применялись без пересборки
-    # volumes:
-    #   - ./backend:/app
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    restart: unless-stopped
+    # Снаружи 3300, а не 3000: 3000 часто занят другими dev-серверами
+    ports:
+      - "127.0.0.1:3300:3000"
+    depends_on:
+      - backend
 
 volumes:
   mongo_data:

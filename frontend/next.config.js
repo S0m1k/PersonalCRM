@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // App Router включён по умолчанию в Next.js 14
-  // Опции для будущего: output: 'standalone' для Docker-деплоя
+  // standalone — минимальный сервер для Docker-образа (см. frontend/Dockerfile)
+  output: 'standalone',
 };
 
 module.exports = nextConfig;

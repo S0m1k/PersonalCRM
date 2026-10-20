@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # На проде — https-домен; локально webhooks от Microsoft не приходят.
     public_base_url: str = "http://localhost:8000"
 
+    # Адрес фронтенда: сюда OAuth callback возвращает браузер, и он же — разрешённый CORS origin.
+    frontend_url: str = "http://localhost:3000"
+
+    # Интервал фонового sync (мин). Без вебхуков (локальный запуск) — ставим поменьше, напр. 5.
+    sync_interval_minutes: int = 30
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

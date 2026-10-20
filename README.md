@@ -19,42 +19,46 @@
 - [Архитектура синхронизации контактов](docs/contact_sync_architecture.md)
 - [План спринтов](docs/sprints.md)
 
-## Запуск (локально)
+## Запуск (на этом компьютере)
 
-### 1. MongoDB + Backend (через Docker Compose)
-
-```bash
-docker-compose up --build
-```
-
-Поднимает:
-- **MongoDB 7** на порту `27017` (данные в Docker volume `mongo_data`)
-- **FastAPI backend** на порту `8000` (собирается из `./backend`)
-
-Health-check: http://localhost:8000/api/health  
-Swagger UI: http://localhost:8000/docs
-
-### 2. Frontend (Next.js)
+Нужны **Docker Desktop** и **Python 3** (только для служебных скриптов).
 
 ```bash
-cd frontend
-npm install
-cp .env.local.example .env.local   # или copy на Windows
-npm run dev
+python scripts/init_env.py       # один раз: создаёт backend/.env со случайными секретами
+docker compose up -d --build     # вся система: MongoDB + backend + frontend
 ```
 
-Фронтенд поднимается на http://localhost:3000 и отображает статус бэкенда.
+Открыть: **http://localhost:3300** — пользователь `admin`, пароль — строка `ADMIN_PASSWORD` в `backend/.env`.
 
-### Проверка после запуска
+Порты открыты только на этом компьютере (`127.0.0.1`):
 
-| URL | Что проверяем |
-|-----|---------------|
-| http://localhost:8000/api/health | API + MongoDB ping |
+| URL | Что |
+|-----|-----|
+| http://localhost:3300 | Интерфейс CRM |
+| http://localhost:8000/api/health | Проверка API и базы |
 | http://localhost:8000/docs | Swagger / OpenAPI |
-| http://localhost:3000 | UI со статусом сервисов |
+
+### Подключить Outlook и Google
+
+Пошагово: [docs/setup_oauth.md](docs/setup_oauth.md).
+
+### Резервные копии
+
+```bash
+python scripts/backup.py                       # копия в ./backups, хранится 14 последних
+python scripts/backup.py --dir D:/Backups/crm   # лучше — на другой диск или в облачную папку
+python scripts/backup.py --restore backups/personalcrm-YYYYMMDD-HHMMSS.archive.gz
+```
+
+### Разработка
+
+```bash
+cd backend && .venv/Scripts/python -m pytest -q     # тесты backend
+cd frontend && npm run dev                          # фронтенд с горячей перезагрузкой на :3000
+```
 
 ---
 
 ## Статус
 
-Sprint 0 — скелет проекта. См. [план спринтов](docs/sprints.md).
+Sprint 4 — локальный запуск. См. [план спринтов](docs/sprints.md) и [концепцию](docs/vision/PersonalCRM_vision.pdf).

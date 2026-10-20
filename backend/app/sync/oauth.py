@@ -28,7 +28,8 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-_MS_SCOPES = "Contacts.Read User.Read offline_access"
+# ReadWrite — нужен для двустороннего sync (push правок из CRM в Outlook)
+_MS_SCOPES = "Contacts.ReadWrite User.Read offline_access"
 
 # ---------------------------------------------------------------------------
 # Проверка наличия конфигурации

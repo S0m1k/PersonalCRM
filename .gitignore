@@ -33,3 +33,4 @@ Thumbs.db
 
 # MongoDB dumps
 /dump/
+/backups/

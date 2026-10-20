@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from bson import ObjectId
@@ -20,6 +20,10 @@ from ..models.sync import SyncConnection, SyncLog, SyncStats, SyncError
 
 CONN_COLLECTION = "sync_connections"
 LOG_COLLECTION = "sync_log"
+STATE_COLLECTION = "oauth_states"
+
+# Сколько живёт выданный OAuth state: пользователь должен успеть войти в аккаунт
+OAUTH_STATE_TTL = timedelta(minutes=15)
 
 
 def _utcnow() -> datetime:
@@ -161,6 +165,34 @@ def get_decrypted_tokens(conn: SyncConnection) -> tuple[str, Optional[str]]:
     Вызывается из sync-движков, которые передают токены в httpx.
     """
     return _decrypt_tokens(conn)
+
+
+# ---------------------------------------------------------------------------
+# OAuth state (защита callback от CSRF и подмены аккаунта)
+# ---------------------------------------------------------------------------
+
+
+async def save_oauth_state(db: AsyncIOMotorDatabase, state: str, provider: str) -> None:
+    """Запомнить выданный state, чтобы callback принял только его."""
+    await db[STATE_COLLECTION].insert_one(
+        {"state": state, "provider": provider, "created_at": _utcnow()}
+    )
+
+
+async def consume_oauth_state(db: AsyncIOMotorDatabase, state: Optional[str], provider: str) -> bool:
+    """
+    Проверить и сразу удалить state (одноразовый).
+    False — если state не выдавался, выдан другому провайдеру или просрочен.
+    """
+    if not state:
+        return False
+    doc = await db[STATE_COLLECTION].find_one_and_delete({"state": state, "provider": provider})
+    if doc is None:
+        return False
+    created = doc["created_at"]
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return _utcnow() - created <= OAUTH_STATE_TTL
 
 
 # ---------------------------------------------------------------------------

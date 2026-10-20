@@ -20,6 +20,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
@@ -65,6 +66,12 @@ DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
 AuthDep = Annotated[str, Depends(get_current_user)]
 
 
+def _ui_redirect(**params: str) -> RedirectResponse:
+    """Вернуть браузер на страницу /sync фронтенда с параметрами результата."""
+    url = f"{settings.frontend_url.rstrip('/')}/sync?{urlencode(params)}"
+    return RedirectResponse(url=url, status_code=302)
+
+
 # ---------------------------------------------------------------------------
 # Connections
 # ---------------------------------------------------------------------------
@@ -85,7 +92,7 @@ async def list_connections(db: DbDep, _user: AuthDep) -> list[SyncConnectionOut]
     "/connect/microsoft",
     summary="Начать OAuth flow с Microsoft",
 )
-async def connect_microsoft(_user: AuthDep):
+async def connect_microsoft(db: DbDep, _user: AuthDep):
     """
     Возвращает URL для редиректа пользователя на Microsoft login.
 
@@ -103,6 +110,7 @@ async def connect_microsoft(_user: AuthDep):
         )
 
     state = str(uuid.uuid4())
+    await sync_repo.save_oauth_state(db, state, "microsoft")
     url = ms_authorize_url(state)
     return {"authorize_url": url, "state": state}
 
@@ -125,19 +133,20 @@ async def callback_microsoft(
     """
     if error:
         logger.warning("Microsoft OAuth error: %s — %s", error, error_description)
-        return RedirectResponse(
-            url=f"/sync?error={error}&description={error_description or ''}",
-            status_code=302,
-        )
+        return _ui_redirect(error=error, description=error_description or "")
 
     if not code:
         raise HTTPException(status_code=400, detail="Отсутствует authorization code")
+
+    if not await sync_repo.consume_oauth_state(db, state, "microsoft"):
+        logger.warning("Microsoft OAuth callback with invalid state")
+        return _ui_redirect(error="invalid_state")
 
     try:
         token_data = await ms_exchange_code(code)
     except Exception as exc:
         logger.error("ms_exchange_code failed: %s", exc)
-        return RedirectResponse(url="/sync?error=token_exchange_failed", status_code=302)
+        return _ui_redirect(error="token_exchange_failed")
 
     access_token = token_data.get("access_token", "")
     refresh_token = token_data.get("refresh_token")
@@ -155,14 +164,14 @@ async def callback_microsoft(
     )
 
     logger.info("Microsoft connection created via OAuth callback")
-    return RedirectResponse(url="/sync?connected=microsoft", status_code=302)
+    return _ui_redirect(connected="microsoft")
 
 
 @router.post(
     "/connect/google",
     summary="Начать OAuth flow с Google",
 )
-async def connect_google(_user: AuthDep):
+async def connect_google(db: DbDep, _user: AuthDep):
     """Вернуть URL для редиректа на Google login (или 501 если не настроено)."""
     if not google_configured():
         raise HTTPException(
@@ -174,6 +183,7 @@ async def connect_google(_user: AuthDep):
             ),
         )
     state = str(uuid.uuid4())
+    await sync_repo.save_oauth_state(db, state, "google")
     return {"authorize_url": google_authorize_url(state), "state": state}
 
 
@@ -191,15 +201,19 @@ async def callback_google(
     """Обменять code Google на токены, сохранить, редиректнуть в UI."""
     if error:
         logger.warning("Google OAuth error: %s", error)
-        return RedirectResponse(url=f"/sync?error={error}", status_code=302)
+        return _ui_redirect(error=error)
     if not code:
         raise HTTPException(status_code=400, detail="Отсутствует authorization code")
+
+    if not await sync_repo.consume_oauth_state(db, state, "google"):
+        logger.warning("Google OAuth callback with invalid state")
+        return _ui_redirect(error="invalid_state")
 
     try:
         token_data = await google_exchange_code(code)
     except Exception as exc:
         logger.error("google_exchange_code failed: %s", exc)
-        return RedirectResponse(url="/sync?error=token_exchange_failed", status_code=302)
+        return _ui_redirect(error="token_exchange_failed")
 
     expires_in = token_data.get("expires_in", 3600)
     token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
@@ -214,7 +228,7 @@ async def callback_google(
         sync_calendar=False,
     )
     logger.info("Google connection created via OAuth callback")
-    return RedirectResponse(url="/sync?connected=google", status_code=302)
+    return _ui_redirect(connected="google")
 
 
 @router.delete(
