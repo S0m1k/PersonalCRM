@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Палитра в духе Notion: тёплый нейтральный текст, едва заметные линии,
+ * акцент — синий, теги — приглушённые фоны с тёмным текстом.
+ * Значения — RGB-тройки, чтобы работала прозрачность Tailwind (bg-hover/50).
+ */
+:root {
+  --bg: 255 255 255;
+  --sidebar: 247 247 245;
+  --surface: 255 255 255;
+  --fg: 55 53 47;
+  --muted: 120 119 116;
+  --faint: 172 171 169;
+  --line: 233 233 231;
+  --hover: 239 239 237;
+  --accent: 35 131 226;
+  --accent-fg: 255 255 255;
+  --danger: 212 76 71;
+
+  --tag-gray: 227 226 224;
+  --tag-brown: 238 224 218;
+  --tag-orange: 250 222 201;
+  --tag-yellow: 253 236 200;
+  --tag-green: 219 237 219;
+  --tag-blue: 211 229 239;
+  --tag-purple: 232 222 238;
+  --tag-pink: 245 224 233;
+  --tag-red: 255 226 221;
+
+  color-scheme: light;
+}
+
+.dark {
+  --bg: 25 25 25;
+  --sidebar: 32 32 32;
+  --surface: 37 37 37;
+  --fg: 225 225 223;
+  --muted: 155 155 151;
+  --faint: 105 105 102;
+  --line: 47 47 47;
+  --hover: 44 44 44;
+  --accent: 82 156 236;
+  --accent-fg: 255 255 255;
+  --danger: 230 91 85;
+
+  --tag-gray: 60 60 60;
+  --tag-brown: 74 50 40;
+  --tag-orange: 92 59 35;
+  --tag-yellow: 86 67 40;
+  --tag-green: 36 61 48;
+  --tag-blue: 20 58 78;
+  --tag-purple: 60 45 73;
+  --tag-pink: 78 44 60;
+  --tag-red: 82 46 42;
+
+  color-scheme: dark;
+}
+
+@layer base {
+  html,
+  body {
+    @apply bg-bg text-fg antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  ::selection {
+    @apply bg-accent/20;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent/50 ring-offset-0;
+  }
+
+  /* Тонкий скроллбар, как в Notion */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line)) transparent;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

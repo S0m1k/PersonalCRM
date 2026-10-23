@@ -86,6 +86,7 @@ async def list_contacts(
     q: Optional[str] = None,
     category: Optional[str] = None,
     priority: Optional[str] = None,
+    template_id: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
 ) -> list[ContactOut]:
@@ -116,6 +117,9 @@ async def list_contacts(
 
     if priority:
         query["priority"] = priority
+
+    if template_id:
+        query["template_id"] = template_id
 
     cursor = (
         db[COLLECTION]
@@ -149,6 +153,10 @@ async def update_contact(
         return await get_contact_by_id(db, contact_id)
 
     changes["updated_at"] = _utcnow()
+
+    # "" в PATCH означает «снять шаблон»
+    if changes.get("template_id") == "":
+        changes["template_id"] = None
 
     # ExternalIds → dict
     if hasattr(changes.get("external_ids"), "model_dump"):

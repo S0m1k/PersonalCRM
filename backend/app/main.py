@@ -16,6 +16,9 @@ from .db import close_db, connect_db, get_db
 logger = logging.getLogger(__name__)
 from .routers import auth as auth_router
 from .routers import contacts as contacts_router
+from .routers import home as home_router
+from .routers import questions as questions_router
+from .routers import templates as templates_router
 from .routers import import_ as import_router
 from .routers import sync as sync_router
 from .routers import webhooks as webhooks_router
@@ -74,6 +77,11 @@ app.include_router(auth_router.router)
 
 # Contacts: /api/contacts/* — требуют токена
 app.include_router(contacts_router.router)
+
+# Шаблоны карточек и вопросы к человеку (Sprint 5)
+app.include_router(templates_router.router)
+app.include_router(questions_router.router)
+app.include_router(home_router.router)
 
 # Sync: /api/sync/* — подключение провайдеров и синхронизация (Sprint 2)
 app.include_router(sync_router.router)

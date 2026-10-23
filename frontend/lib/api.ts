@@ -54,6 +54,8 @@ export interface Contact {
   custom_fields: CustomField[];
   relationships: Relationship[];
   external_ids: ExternalIds;
+  template_id: string | null;
+  fields: Record<string, FieldValue>;
   source: string;
   sources: string[];
   last_synced_at: string | null;
@@ -76,9 +78,85 @@ export interface ContactCreate {
   priority?: string;
   custom_fields?: CustomField[];
   relationships?: Relationship[];
+  /** "" в PATCH — снять шаблон */
+  template_id?: string | null;
+  fields?: Record<string, FieldValue>;
 }
 
 export type ContactUpdate = Partial<ContactCreate>;
+
+export type FieldValue = string | number | boolean;
+export type FieldType = 'text' | 'longtext' | 'date' | 'number' | 'select' | 'url' | 'bool';
+
+export interface FieldDef {
+  key: string;
+  label: string;
+  type: FieldType;
+  options: string[];
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  icon: string;
+  fields: FieldDef[];
+  builtin: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TemplateInput {
+  name: string;
+  icon?: string;
+  fields: Array<Omit<FieldDef, 'key'> & { key?: string }>;
+}
+
+export type QuestionStatus = 'open' | 'answered' | 'dropped';
+
+export interface Question {
+  id: string;
+  contact_id: string;
+  contact_name: string;
+  text: string;
+  status: QuestionStatus;
+  answer: string;
+  answered_at: string | null;
+  /** "next_meeting" | YYYY-MM-DD | null */
+  ask_at: string | null;
+  source: 'manual' | 'ai' | 'meeting';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionUpdate {
+  text?: string;
+  status?: QuestionStatus;
+  answer?: string;
+  ask_at?: string | null;
+}
+
+export interface UpcomingBirthday {
+  contact_id: string;
+  name: string;
+  date: string;
+  days_until: number;
+  turns: number | null;
+}
+
+export interface RecentContact {
+  id: string;
+  name: string;
+  company: string;
+  position: string;
+  template_id: string | null;
+}
+
+export interface HomeSummary {
+  stats: { contacts: number; open_questions: number };
+  birthdays: UpcomingBirthday[];
+  recent: RecentContact[];
+  open_questions: Question[];
+}
 
 export interface TokenResponse {
   access_token: string;
@@ -106,7 +184,7 @@ export function isLoggedIn(): boolean {
   return !!getToken();
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -114,6 +192,29 @@ class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** Человекочитаемый текст ошибки из ответа FastAPI ({detail: string | string[] | [{msg}]}). */
+async function errorMessage(resp: Response): Promise<string> {
+  const text = await resp.text().catch(() => resp.statusText);
+  try {
+    const detail: unknown = JSON.parse(text).detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d: unknown) => (typeof d === 'string' ? d : (d as { msg?: string }).msg ?? ''))
+        .filter(Boolean)
+        .join('; ');
+    }
+  } catch {
+    // не JSON — вернём как есть
+  }
+  return text || resp.statusText;
+}
+
+/** Fetcher для SWR: ключ — путь API. */
+export function fetcher<T>(path: string): Promise<T> {
+  return apiFetch<T>(path);
 }
 
 async function apiFetch<T>(
@@ -136,13 +237,14 @@ async function apiFetch<T>(
 
   if (resp.status === 401) {
     clearToken();
-    // Перенаправление выполняется в компоненте
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
     throw new ApiError(401, 'Не авторизован');
   }
 
   if (!resp.ok) {
-    const text = await resp.text().catch(() => resp.statusText);
-    throw new ApiError(resp.status, text);
+    throw new ApiError(resp.status, await errorMessage(resp));
   }
 
   // 204 No Content
@@ -369,4 +471,50 @@ export async function confirmImport(
     method: 'POST',
     body: JSON.stringify({ decisions }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Шаблоны карточек
+// ---------------------------------------------------------------------------
+
+export function createTemplate(data: TemplateInput): Promise<Template> {
+  return apiFetch<Template>('/api/templates', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateTemplate(id: string, data: Partial<TemplateInput>): Promise<Template> {
+  return apiFetch<Template>(`/api/templates/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function deleteTemplate(id: string): Promise<void> {
+  return apiFetch<void>(`/api/templates/${id}`, { method: 'DELETE' });
+}
+
+// ---------------------------------------------------------------------------
+// Вопросы к человеку
+// ---------------------------------------------------------------------------
+
+export function createQuestion(contactId: string, text: string, askAt: string | null = null): Promise<Question> {
+  return apiFetch<Question>('/api/questions', {
+    method: 'POST',
+    body: JSON.stringify({ contact_id: contactId, text, ask_at: askAt }),
+  });
+}
+
+export function updateQuestion(id: string, data: QuestionUpdate): Promise<Question> {
+  return apiFetch<Question>(`/api/questions/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function deleteQuestion(id: string): Promise<void> {
+  return apiFetch<void>(`/api/questions/${id}`, { method: 'DELETE' });
+}
+
+// ---------------------------------------------------------------------------
+// Главная
+// ---------------------------------------------------------------------------
+
+/** Ключ SWR главной: с локальной датой (сервер может жить в UTC). */
+export function homeKey(): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  return `/api/home?today=${local}`;
 }

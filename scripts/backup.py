@@ -54,9 +54,16 @@ def prune(target_dir: Path, keep: int) -> list[Path]:
 
 
 def restore(archive: Path) -> None:
-    """Заменить базу содержимым архива."""
+    """Заменить базу содержимым архива целиком (коллекции, которых нет в копии, тоже удаляются)."""
     if not archive.is_file():
         raise FileNotFoundError(archive)
+    # mongorestore --drop пересоздаёт только коллекции из архива — более новые остались бы
+    dropped = subprocess.run(
+        _compose_exec("mongosh", DB_NAME, "--quiet", "--eval", "db.dropDatabase()"),
+        cwd=ROOT, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL,
+    )
+    if dropped.returncode != 0:
+        raise RuntimeError(f"Не удалось очистить базу перед восстановлением:\n{dropped.stderr.decode(errors='replace')}")
     with archive.open("rb") as src:
         result = subprocess.run(
             _compose_exec("mongorestore", "--archive", "--gzip", "--drop", f"--nsInclude={DB_NAME}.*"),

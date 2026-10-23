@@ -90,6 +90,16 @@ class ContactBase(BaseModel):
         default_factory=ExternalIds,
         description="Внешние ID для синхронизации",
     )
+    template_id: Optional[str] = Field(default=None, description="ID шаблона карточки")
+    fields: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Значения типизированных полей шаблона: {ключ поля: значение}",
+    )
+
+    @field_validator("template_id", mode="before")
+    @classmethod
+    def empty_template_is_none(cls, v: Any) -> Optional[str]:
+        return v or None
 
     @field_validator("birthday", mode="before")
     @classmethod
@@ -137,6 +147,9 @@ class ContactUpdate(BaseModel):
     external_ids: Optional[ExternalIds] = None
     source: Optional[str] = None
     sources: Optional[list[str]] = None
+    # "" — снять шаблон (None означает «не менять»)
+    template_id: Optional[str] = None
+    fields: Optional[dict[str, Any]] = None
 
     @field_validator("birthday", mode="before")
     @classmethod

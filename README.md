@@ -54,7 +54,7 @@ python scripts/backup.py --restore backups/personalcrm-YYYYMMDD-HHMMSS.archive.g
 
 ```bash
 cd backend && .venv/Scripts/python -m pytest -q     # тесты backend
-cd frontend && npm run dev                          # фронтенд с горячей перезагрузкой на :3000
+docker compose stop frontend && cd frontend && npm run dev -- -p 3300   # фронтенд с горячей перезагрузкой вместо контейнера
 ```
 
 ---

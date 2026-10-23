@@ -1,107 +1,70 @@
 'use client';
 
-/**
- * Страница входа.
- * После успешной аутентификации сохраняет токен в localStorage и редиректит на /contacts.
- */
-
-import { useState, FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { login, saveToken } from '../../lib/api';
+import { login, saveToken } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
+    setIsLoading(true);
     try {
       const resp = await login(username, password);
       saveToken(resp.access_token);
-      router.push('/contacts');
+      router.push('/');
     } catch {
       setError('Неверный логин или пароль');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   }
 
   return (
-    <main style={{ maxWidth: 360, margin: '4rem auto' }}>
-      <h1 style={{ marginBottom: '1.5rem' }}>Войти в PersonalCRM</h1>
+    <main className="flex min-h-dvh items-center justify-center bg-sidebar px-4">
+      <div className="w-full max-w-[340px] animate-fade-up">
+        <div className="mb-8 text-center">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-lg bg-fg font-serif text-2xl font-bold italic text-bg">
+            P
+          </span>
+          <h1 className="text-xl font-semibold tracking-tight">PersonalCRM</h1>
+          <p className="mt-1 text-sm text-muted">Люди и всё, что о них важно помнить</p>
+        </div>
 
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          background: '#fff',
-          padding: '2rem',
-          borderRadius: 8,
-          boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1rem',
-        }}
-      >
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Логин</span>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            autoComplete="username"
-            style={inputStyle}
-          />
-        </label>
-
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Пароль</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-            style={inputStyle}
-          />
-        </label>
-
-        {error && (
-          <p style={{ color: '#c00', margin: 0, fontSize: '0.9rem' }}>{error}</p>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={btnStyle}
-        >
-          {loading ? 'Вход…' : 'Войти'}
-        </button>
-      </form>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-lg bg-surface p-5 shadow-pop">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted">Логин</span>
+            <Input value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username" />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted">Пароль</span>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoFocus
+              autoComplete="current-password"
+            />
+          </label>
+          {error && (
+            <p role="alert" className="text-sm text-danger">
+              {error}
+            </p>
+          )}
+          <Button type="submit" variant="primary" className="mt-1 w-full" disabled={isLoading}>
+            {isLoading ? 'Вхожу…' : 'Войти'}
+          </Button>
+        </form>
+      </div>
     </main>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  padding: '0.5rem 0.75rem',
-  border: '1px solid #ccc',
-  borderRadius: 4,
-  fontSize: '1rem',
-  outline: 'none',
-};
-
-const btnStyle: React.CSSProperties = {
-  padding: '0.6rem',
-  background: '#2563eb',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 4,
-  fontSize: '1rem',
-  cursor: 'pointer',
-  fontWeight: 600,
-};
