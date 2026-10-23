@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { Building2, CircleHelp, MapPin, Phone, Plus, Search, SlidersHorizontal, Type, X } from 'lucide-react';
+import { Building2, CircleHelp, MapPin, Phone, Plus, Search, SearchX, SlidersHorizontal, Type, UserPlus, Users, X } from 'lucide-react';
 import type { Contact, Template } from '@/lib/api';
 import { cn, fullName, relativeTime } from '@/lib/utils';
 import { Avatar } from '@/components/app/avatar';
+import { TemplateIcon } from '@/components/app/icons';
 import { useAppActions } from '@/components/app/app-shell';
 import { EmptyState, Page, PageHeader, Skeleton } from '@/components/app/page';
 import { Button } from '@/components/ui/button';
@@ -46,7 +47,7 @@ export default function ContactsPage() {
   return (
     <Page wide>
       <PageHeader
-        icon="👥"
+        icon={Users}
         title="Контакты"
         actions={
           <Button variant="primary" onClick={() => newContact(query.trim())}>
@@ -69,14 +70,20 @@ export default function ContactsPage() {
           <MenuTrigger asChild>
             <Button variant="ghost" size="sm" className={cn(activeTemplate && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent')}>
               <SlidersHorizontal />
-              {activeTemplate ? `${activeTemplate.icon} ${activeTemplate.name}` : 'Шаблон'}
+              {activeTemplate ? (
+                <>
+                  <TemplateIcon name={activeTemplate.icon} /> {activeTemplate.name}
+                </>
+              ) : (
+                'Шаблон'
+              )}
             </Button>
           </MenuTrigger>
           <MenuContent align="start">
             <MenuLabel>Показать только</MenuLabel>
             {templates.map((t) => (
               <MenuItem key={t.id} onSelect={() => setTemplateId(t.id)}>
-                <span aria-hidden>{t.icon}</span> {t.name}
+                <TemplateIcon name={t.icon} /> {t.name}
               </MenuItem>
             ))}
             {templateId && (
@@ -147,7 +154,7 @@ export default function ContactsPage() {
                           </span>
                         </span>
                       </td>
-                      <td>{template ? <Tag color="gray">{template.icon} {template.name}</Tag> : <span className="text-faint">—</span>}</td>
+                      <td>{template ? <Tag color="gray"><TemplateIcon name={template.icon} className="size-3" /> {template.name}</Tag> : <span className="text-faint">—</span>}</td>
                       <td className="max-w-[200px] truncate">{c.company || <span className="text-faint">—</span>}</td>
                       <td className="truncate">{c.city || <span className="text-faint">—</span>}</td>
                       <td className="whitespace-nowrap tabular text-muted">{c.phones[0]?.value ?? <span className="text-faint">—</span>}</td>
@@ -163,11 +170,11 @@ export default function ContactsPage() {
       {contacts && contacts.length === 0 && (
         <div className="mt-6">
           {isFiltered ? (
-            <EmptyState icon="🔎" title="Ничего не нашлось">
+            <EmptyState icon={SearchX} title="Ничего не нашлось">
               Попробуйте другой запрос или сбросьте фильтр шаблона.
             </EmptyState>
           ) : (
-            <EmptyState icon="👋" title="Контактов пока нет">
+            <EmptyState icon={UserPlus} title="Контактов пока нет">
               Подключите Outlook или Google в «Синхронизации», загрузите файл в «Импорте» или нажмите «Новый».
             </EmptyState>
           )}

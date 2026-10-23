@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { IconTile } from './icons';
 
 /** Колонка страницы в духе Notion: широкие поля, контент по центру. */
 export function Page({ children, wide = false, className }: { children: ReactNode; wide?: boolean; className?: string }) {
@@ -11,7 +13,7 @@ export function Page({ children, wide = false, className }: { children: ReactNod
 }
 
 type HeaderProps = {
-  icon?: ReactNode;
+  icon?: LucideIcon;
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
@@ -20,7 +22,11 @@ type HeaderProps = {
 export function PageHeader({ icon, title, description, actions }: HeaderProps) {
   return (
     <header className="mb-8 animate-fade-up">
-      {icon && <div className="mb-3 text-[40px] leading-none sm:text-[52px]">{icon}</div>}
+      {icon && (
+        <div className="mb-4">
+          <IconTile icon={icon} />
+        </div>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-title">{title}</h1>
         {actions && <div className="flex items-center gap-1.5 pb-1">{actions}</div>}
@@ -40,10 +46,12 @@ export function SectionTitle({ children, aside }: { children: ReactNode; aside?:
   );
 }
 
-export function EmptyState({ icon, title, children }: { icon: ReactNode; title: ReactNode; children?: ReactNode }) {
+export function EmptyState({ icon, title, children }: { icon: LucideIcon; title: ReactNode; children?: ReactNode }) {
   return (
     <div className="flex flex-col items-center rounded-md border border-dashed border-line px-6 py-10 text-center">
-      <div className="mb-3 text-3xl">{icon}</div>
+      <div className="mb-3">
+        <IconTile icon={icon} size="md" />
+      </div>
       <div className="text-sm font-medium">{title}</div>
       {children && <div className="mt-1 max-w-sm text-sm text-muted">{children}</div>}
     </div>

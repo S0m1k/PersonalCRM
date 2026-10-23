@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { toast } from 'sonner';
-import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Plus, Puzzle, Trash2 } from 'lucide-react';
 import { createTemplate, deleteTemplate, updateTemplate, type FieldDef, type FieldType, type Template } from '@/lib/api';
 import { cn, errorText } from '@/lib/utils';
 import { Page, PageHeader, Skeleton } from '@/components/app/page';
+import { TEMPLATE_ICONS, TemplateIcon } from '@/components/app/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/overlays';
+import { Menu, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTrigger } from '@/components/ui/overlays';
 
 const TYPES: { value: FieldType; label: string }[] = [
   { value: 'text', label: 'Текст' },
@@ -31,7 +32,7 @@ function toDraft(t: Template): Draft {
 function fromDraft(d: Draft) {
   return {
     name: d.name.trim(),
-    icon: d.icon.trim() || '📄',
+    icon: d.icon,
     fields: d.fields.map(({ optionsText, ...f }) => ({
       ...f,
       label: f.label.trim(),
@@ -47,7 +48,7 @@ export default function TemplatesPage() {
 
   async function handleCreate() {
     try {
-      const created = await createTemplate({ name: 'Новый шаблон', icon: '📄', fields: [{ label: 'Заметка', type: 'text', options: [] }] });
+      const created = await createTemplate({ name: 'Новый шаблон', icon: 'file-text', fields: [{ label: 'Заметка', type: 'text', options: [] }] });
       await mutate();
       setSelectedId(created.id);
     } catch (err) {
@@ -58,7 +59,7 @@ export default function TemplatesPage() {
   return (
     <Page wide>
       <PageHeader
-        icon="🧩"
+        icon={Puzzle}
         title="Шаблоны карточек"
         description="Шаблон задаёт дополнительные поля карточки: у клиента — стадия и бюджет, у друга — семья и идеи подарков."
       />
@@ -76,7 +77,7 @@ export default function TemplatesPage() {
                     selected?.id === t.id && 'bg-hover font-medium',
                   )}
                 >
-                  <span aria-hidden>{t.icon}</span>
+                  <TemplateIcon name={t.icon} className="size-4 text-muted" />
                   <span className="flex-1 truncate">{t.name}</span>
                   <span className="text-xs text-faint">{t.fields.length}</span>
                 </button>
@@ -158,13 +159,7 @@ function TemplateEditor({ template, onSaved, onDeleted }: EditorProps) {
   return (
     <div className="animate-fade-up">
       <div className="mb-6 flex items-center gap-2">
-        <Input
-          value={draft.icon}
-          onChange={(e) => setDraft({ ...draft, icon: e.target.value })}
-          className="h-10 w-12 text-center text-xl"
-          aria-label="Иконка"
-          maxLength={8}
-        />
+        <IconPicker value={draft.icon} onChange={(icon) => setDraft({ ...draft, icon })} />
         <Input
           value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -260,5 +255,41 @@ function TemplateEditor({ template, onSaved, onDeleted }: EditorProps) {
         Удалённое поле пропадёт из карточек, но уже записанные значения сохранятся в базе.
       </p>
     </div>
+  );
+}
+
+function IconPicker({ value, onChange }: { value: string; onChange: (icon: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        aria-label="Иконка шаблона"
+        className="flex size-10 shrink-0 items-center justify-center rounded border border-line bg-surface text-muted transition-colors hover:bg-hover hover:text-fg"
+      >
+        <TemplateIcon name={value} className="size-5" />
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-2">
+        <div className="grid grid-cols-5 gap-1">
+          {Object.keys(TEMPLATE_ICONS).map((name) => (
+            <button
+              key={name}
+              type="button"
+              aria-label={name}
+              aria-pressed={name === value}
+              onClick={() => {
+                onChange(name);
+                setOpen(false);
+              }}
+              className={cn(
+                'flex size-9 items-center justify-center rounded text-muted transition-colors hover:bg-hover hover:text-fg',
+                name === value && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent',
+              )}
+            >
+              <TemplateIcon name={name} className="size-[18px]" />
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

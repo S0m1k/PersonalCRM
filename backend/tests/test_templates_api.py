@@ -30,7 +30,7 @@ def auth(client):
 def _create_template(client, auth, **overrides) -> dict:
     body = {
         "name": "Инвестор",
-        "icon": "💰",
+        "icon": "coins",
         "fields": [
             {"label": "Фонд", "type": "text"},
             {"label": "Чек", "type": "number"},
@@ -197,3 +197,39 @@ class TestContactFields:
 
         assert resp.status_code == 200
         assert resp.json()["template_id"] is None
+
+
+class TestIcons:
+    def test_builtin_icons_are_svg_names(self, client, auth):
+        from app.models.template import TEMPLATE_ICONS
+
+        icons = [t["icon"] for t in client.get("/api/templates", headers=auth).json()]
+
+        assert icons == ["briefcase", "handshake", "smile", "house", "id-card"]
+        assert set(icons) <= set(TEMPLATE_ICONS)
+
+    def test_unknown_icon_is_rejected(self, client, auth):
+        resp = client.post("/api/templates", json={"name": "X", "icon": "💰", "fields": []}, headers=auth)
+
+        assert resp.status_code == 422
+
+    def test_default_icon(self, client, auth):
+        resp = client.post("/api/templates", json={"name": "X", "fields": []}, headers=auth)
+
+        assert resp.json()["icon"] == "file-text"
+
+
+def test_legacy_emoji_icons_are_read_as_svg_names():
+    """В базе уже лежат шаблоны с эмодзи — при чтении они становятся именами иконок."""
+    from datetime import datetime, timezone
+
+    from bson import ObjectId
+
+    from app.models.template import TemplateOut
+
+    now = datetime.now(timezone.utc)
+    base = {"name": "Клиент", "fields": [], "created_at": now, "updated_at": now}
+
+    assert TemplateOut.from_mongo({**base, "_id": ObjectId(), "icon": "💼"}).icon == "briefcase"
+    assert TemplateOut.from_mongo({**base, "_id": ObjectId(), "icon": "🧑‍💼"}).icon == "id-card"
+    assert TemplateOut.from_mongo({**base, "_id": ObjectId(), "icon": "🦄"}).icon == "file-text"

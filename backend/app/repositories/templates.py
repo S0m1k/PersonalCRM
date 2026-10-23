@@ -20,33 +20,33 @@ from ..models.template import FieldDef, TemplateCreate, TemplateOut, TemplateUpd
 COLLECTION = "card_templates"
 CONTACTS = "contacts"
 
-# Встроенные шаблоны: (имя, иконка, [(ключ, подпись, тип, варианты)])
+# Встроенные шаблоны: (имя, иконка lucide, [(ключ, подпись, тип, варианты)])
 BUILTIN: list[tuple[str, str, list[tuple[str, str, str, list[str]]]]] = [
-    ("Клиент", "💼", [
+    ("Клиент", "briefcase", [
         ("stage", "Стадия", "select", ["Лид", "Переговоры", "Клиент", "Бывший клиент"]),
         ("buys", "Что покупает", "text", []),
         ("budget", "Бюджет", "number", []),
         ("website", "Сайт", "url", []),
     ]),
-    ("Партнёр", "🤝", [
+    ("Партнёр", "handshake", [
         ("industry", "Сфера", "text", []),
         ("useful_for", "Чем полезен", "longtext", []),
         ("projects", "Совместные проекты", "longtext", []),
         ("website", "Сайт", "url", []),
     ]),
-    ("Друг", "🙂", [
+    ("Друг", "smile", [
         ("family", "Семья", "longtext", []),
         ("interests", "Интересы", "text", []),
         ("met_how", "Как познакомились", "text", []),
         ("gifts", "Идеи подарков", "longtext", []),
     ]),
-    ("Родственник", "🏠", [
+    ("Родственник", "house", [
         ("relation", "Кем приходится", "text", []),
         ("family", "Семья", "longtext", []),
         ("interests", "Интересы", "text", []),
         ("gifts", "Идеи подарков", "longtext", []),
     ]),
-    ("Сотрудник", "🧑‍💼", [
+    ("Сотрудник", "id-card", [
         ("department", "Отдел", "text", []),
         ("hired", "Дата найма", "date", []),
         ("manager", "Руководитель", "text", []),

@@ -9,6 +9,7 @@ import { cn, errorText } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/overlays';
+import { TemplateIcon } from './icons';
 
 type Props = {
   open: boolean;
@@ -57,7 +58,7 @@ export function NewContactDialog({ open, initialName, onOpenChange }: Props) {
           <div>
             <div className="mb-1.5 text-xs font-medium text-muted">Шаблон карточки</div>
             <div className="flex flex-wrap gap-1.5">
-              <TemplateChip label="Без шаблона" icon="📄" isActive={templateId === null} onClick={() => setTemplateId(null)} />
+              <TemplateChip label="Без шаблона" icon="file-text" isActive={templateId === null} onClick={() => setTemplateId(null)} />
               {templates.map((t) => (
                 <TemplateChip
                   key={t.id}
@@ -94,7 +95,7 @@ function TemplateChip({ label, icon, isActive, onClick }: { label: string; icon:
         isActive ? 'border-accent bg-accent/10 text-fg' : 'border-line text-muted hover:bg-hover hover:text-fg',
       )}
     >
-      <span aria-hidden>{icon}</span>
+      <TemplateIcon name={icon} />
       {label}
     </button>
   );

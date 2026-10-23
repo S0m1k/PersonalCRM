@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import useSWR from 'swr';
-import { ArrowUpRight, CalendarDays, Plus, Search } from 'lucide-react';
+import { ArrowUpRight, Cake, CalendarDays, CircleHelp, Plus, Search, UserPlus } from 'lucide-react';
 import { homeKey, type HomeSummary, type UpcomingBirthday } from '@/lib/api';
 import { formatDate, plural } from '@/lib/utils';
 import { Avatar } from '@/components/app/avatar';
@@ -75,7 +75,7 @@ export default function HomePage() {
               ))}
             </ul>
           ) : (
-            <EmptyState icon="❓" title="Открытых вопросов нет">
+            <EmptyState icon={CircleHelp} title="Открытых вопросов нет">
               В карточке человека во вкладке «Вопросы» можно записать, что хотите у него узнать.
             </EmptyState>
           )}
@@ -135,7 +135,7 @@ export default function HomePage() {
               ))}
             </div>
           ) : (
-            <EmptyState icon="👋" title="Пока никого">
+            <EmptyState icon={UserPlus} title="Пока никого">
               Подключите Outlook или Google в «Синхронизации», загрузите файл или создайте контакт.
             </EmptyState>
           )}
@@ -155,8 +155,8 @@ function BirthdayRow({ birthday }: { birthday: UpcomingBirthday }) {
   return (
     <li>
       <Link href={`/contacts/${birthday.contact_id}`} className="-mx-2 flex items-center gap-3 rounded px-2 py-1.5 hover:bg-hover">
-        <span className="text-lg leading-none" aria-hidden>
-          🎂
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-tag-pink text-fg/70" aria-hidden>
+          <Cake className="size-3.5" />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm">{birthday.name}</span>

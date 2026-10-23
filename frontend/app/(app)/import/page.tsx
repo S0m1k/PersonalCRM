@@ -12,7 +12,7 @@ import { useState, type DragEvent } from 'react';
 import Link from 'next/link';
 import { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { FileUp, Loader2 } from 'lucide-react';
+import { CircleCheck, FileUp, Loader2 } from 'lucide-react';
 import {
   confirmImport,
   getImportPreview,
@@ -96,14 +96,14 @@ export default function ImportPage() {
   return (
     <Page>
       <PageHeader
-        icon="📥"
+        icon={FileUp}
         title="Импорт файла"
         description="Экспорт Google Контактов (.csv), визитки vCard (.vcf) или экспорт Telegram (.json). Дубли найдутся сами."
       />
 
       {result && (
         <div className="mb-6 flex items-center justify-between rounded-md bg-tag-green px-4 py-3 text-sm">
-          <span>✓ Импорт завершён. {result}</span>
+          <span className="flex items-center gap-2"><CircleCheck className="size-4" /> Импорт завершён. {result}</span>
           <Link href="/contacts" className="font-medium underline underline-offset-4">
             К контактам
           </Link>

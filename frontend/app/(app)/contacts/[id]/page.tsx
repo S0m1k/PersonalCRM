@@ -6,24 +6,32 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import {
+  AlignLeft,
   AtSign,
   Briefcase,
   Building2,
   Cake,
+  Calendar,
   ChevronRight,
   CircleHelp,
   Flag,
   Hash,
   Info,
   LayoutTemplate,
+  Link2,
+  ListChecks,
   MapPin,
   MoreHorizontal,
   Phone,
   Plus,
+  SquareCheck,
   StickyNote,
   Tag as TagIcon,
   Trash2,
+  Type,
+  UserX,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   deleteContact,
@@ -37,6 +45,7 @@ import {
 } from '@/lib/api';
 import { errorText, formatDate, fullName, relativeTime, type TagColor } from '@/lib/utils';
 import { Avatar } from '@/components/app/avatar';
+import { TemplateIcon } from '@/components/app/icons';
 import { EmptyState, Page, SectionTitle, Skeleton } from '@/components/app/page';
 import { EditableText, FieldValueEditor, PropertyRow, SelectValue } from '@/components/contact/editable';
 import { MultiValue } from '@/components/contact/multi-value';
@@ -62,15 +71,20 @@ const PRIORITIES: Record<string, { label: string; color: TagColor }> = {
   low: { label: 'Низкий', color: 'gray' },
 };
 
-const FIELD_ICONS: Record<FieldType, string> = {
-  text: 'Aa',
-  longtext: '¶',
-  date: '📅',
-  number: '#',
-  select: '▾',
-  url: '🔗',
-  bool: '☑',
+const FIELD_ICONS: Record<FieldType, LucideIcon> = {
+  text: Type,
+  longtext: AlignLeft,
+  date: Calendar,
+  number: Hash,
+  select: ListChecks,
+  url: Link2,
+  bool: SquareCheck,
 };
+
+function FieldTypeIcon({ type }: { type: FieldType }) {
+  const Icon = FIELD_ICONS[type];
+  return <Icon />;
+}
 
 const SOURCE_LABELS: Record<string, string> = {
   manual: 'Вручную',
@@ -118,7 +132,7 @@ export default function ContactPage() {
   if (error) {
     return (
       <Page>
-        <EmptyState icon="🤷" title="Контакт не найден">
+        <EmptyState icon={UserX} title="Контакт не найден">
           Возможно, его удалили. <Link href="/contacts" className="underline">К списку контактов</Link>
         </EmptyState>
       </Page>
@@ -199,7 +213,7 @@ export default function ContactPage() {
               placeholder="Без шаблона"
               renderOption={(tid) => {
                 const t = templates.find((x) => x.id === tid);
-                return t ? <Tag>{t.icon} {t.name}</Tag> : <Tag>—</Tag>;
+                return t ? <Tag><TemplateIcon name={t.icon} className="size-3" /> {t.name}</Tag> : <Tag>—</Tag>;
               }}
               onCommit={(tid) => void save({ template_id: tid })}
             />
@@ -243,10 +257,12 @@ export default function ContactPage() {
           {template && template.fields.length > 0 && (
             <div className="mt-3 border-t border-line pt-3">
               <div className="mb-1 px-1 text-xs font-medium text-faint">
-                {template.icon} {template.name}
+                <span className="inline-flex items-center gap-1.5">
+                  <TemplateIcon name={template.icon} className="size-3" /> {template.name}
+                </span>
               </div>
               {template.fields.map((def) => (
-                <PropertyRow key={def.key} icon={<span className="w-4 text-center text-xs">{FIELD_ICONS[def.type]}</span>} label={def.label}>
+                <PropertyRow key={def.key} icon={<FieldTypeIcon type={def.type} />} label={def.label}>
                   <FieldValueEditor def={def} value={contact.fields[def.key]} onCommit={(v) => saveField(def.key, v)} />
                 </PropertyRow>
               ))}

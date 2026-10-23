@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import useSWR, { useSWRConfig } from 'swr';
+import { CircleHelp, Inbox, PartyPopper } from 'lucide-react';
 import { toast } from 'sonner';
 import { deleteQuestion, updateQuestion, type Question, type QuestionStatus, type QuestionUpdate } from '@/lib/api';
 import { cn, errorText } from '@/lib/utils';
@@ -58,7 +59,7 @@ export default function QuestionsPage() {
   return (
     <Page>
       <PageHeader
-        icon="❓"
+        icon={CircleHelp}
         title="Вопросы"
         description="Что вы хотели узнать у людей. Отметьте вопрос — и запишите ответ, он останется в карточке."
       />
@@ -88,7 +89,7 @@ export default function QuestionsPage() {
           ))}
         </div>
       ) : groups.length === 0 ? (
-        <EmptyState icon={status === 'open' ? '🎉' : '🗂️'} title={status === 'open' ? 'Все вопросы закрыты' : 'Здесь пусто'}>
+        <EmptyState icon={status === 'open' ? PartyPopper : Inbox} title={status === 'open' ? 'Все вопросы закрыты' : 'Здесь пусто'}>
           {status === 'open' && 'Новый вопрос добавляется в карточке человека.'}
         </EmptyState>
       ) : (

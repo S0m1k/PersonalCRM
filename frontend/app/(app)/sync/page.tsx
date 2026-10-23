@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Loader2, MoreHorizontal, RefreshCw, Unplug } from 'lucide-react';
+import { History, Loader2, MoreHorizontal, RefreshCw, Unplug } from 'lucide-react';
 import {
   ApiError,
   connectGoogle,
@@ -18,6 +18,7 @@ import {
   type SyncLogEntry,
 } from '@/lib/api';
 import { errorText, relativeTime } from '@/lib/utils';
+import { GoogleMark, MicrosoftMark } from '@/components/app/icons';
 import { EmptyState, Page, PageHeader, SectionTitle, Skeleton } from '@/components/app/page';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/overlays';
@@ -25,9 +26,9 @@ import { Tag } from '@/components/ui/tag';
 
 type Provider = 'microsoft' | 'google';
 
-const PROVIDERS: Record<Provider, { name: string; logo: string; hint: string }> = {
-  microsoft: { name: 'Outlook', logo: '📮', hint: 'Контакты Microsoft 365 / Outlook.com — они же в телефоне, если он синхронизирован с Outlook' },
-  google: { name: 'Google', logo: '🟢', hint: 'Google Контакты и всё, что сохранено на Android' },
+const PROVIDERS: Record<Provider, { name: string; logo: typeof GoogleMark; hint: string }> = {
+  microsoft: { name: 'Outlook', logo: MicrosoftMark, hint: 'Контакты Microsoft 365 / Outlook.com — они же в телефоне, если он синхронизирован с Outlook' },
+  google: { name: 'Google', logo: GoogleMark, hint: 'Google Контакты и всё, что сохранено на Android' },
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -100,7 +101,7 @@ export default function SyncPage() {
   return (
     <Page>
       <PageHeader
-        icon="🔄"
+        icon={RefreshCw}
         title="Синхронизация"
         description="Подключите аккаунт один раз — дальше контакты обновляются сами каждые несколько минут, а правки из CRM уходят обратно."
       />
@@ -112,9 +113,7 @@ export default function SyncPage() {
           return (
             <div key={provider} className="flex flex-col rounded-lg border border-line p-4">
               <div className="mb-2 flex items-center gap-2.5">
-                <span className="text-2xl" aria-hidden>
-                  {info.logo}
-                </span>
+                <info.logo />
                 <span className="font-semibold">{info.name}</span>
                 {linked.length > 0 && <Tag color="green">подключён</Tag>}
               </div>
@@ -157,7 +156,7 @@ export default function SyncPage() {
       {!log ? (
         <Skeleton className="h-24" />
       ) : log.length === 0 ? (
-        <EmptyState icon="🕰️" title="Синхронизаций ещё не было" />
+        <EmptyState icon={History} title="Синхронизаций ещё не было" />
       ) : (
         <table className="w-full text-sm">
           <thead>
