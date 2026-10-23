@@ -64,7 +64,7 @@ export default function SyncPage() {
     setBusyId(provider);
     try {
       const { authorize_url } = provider === 'microsoft' ? await connectMicrosoft() : await connectGoogle();
-      window.location.href = authorize_url;
+      window.location.assign(authorize_url);
     } catch (err) {
       setBusyId(null);
       if (err instanceof ApiError && err.status === 501) setSetupProvider(provider);
