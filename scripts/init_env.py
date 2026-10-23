@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "backend" / ".env.example"
 TARGET = ROOT / "backend" / ".env"
+ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 
 def generate_secrets() -> dict[str, str]:
@@ -28,6 +29,8 @@ def generate_secrets() -> dict[str, str]:
         "ADMIN_PASSWORD": secrets.token_urlsafe(12),
         # Fernet-ключ = urlsafe base64 от 32 случайных байт
         "TOKEN_ENCRYPTION_KEY": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
+        # Пароль для телефона (CardDAV): только буквы и цифры — его вводят руками
+        "CARDDAV_PASSWORD": "".join(secrets.choice(ALPHABET) for _ in range(16)),
     }
 
 

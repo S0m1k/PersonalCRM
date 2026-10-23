@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .carddav import router as carddav_router
 from .config import settings
 from .db import close_db, connect_db, get_db
 
@@ -91,6 +92,9 @@ app.include_router(import_router.router)
 
 # Webhooks: /api/webhooks/* — публичные эндпоинты для уведомлений Microsoft (Sprint 3)
 app.include_router(webhooks_router.router)
+
+# CardDAV: /dav/* — контакты в iPhone / Android (Basic-auth, CARDDAV_PASSWORD)
+app.include_router(carddav_router.router)
 
 
 # ---------------------------------------------------------------------------

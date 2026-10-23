@@ -19,6 +19,7 @@ import {
 } from '@/lib/api';
 import { errorText, relativeTime } from '@/lib/utils';
 import { GoogleMark, MicrosoftMark } from '@/components/app/icons';
+import { PhoneSyncCard } from '@/components/app/phone-sync-card';
 import { EmptyState, Page, PageHeader, SectionTitle, Skeleton } from '@/components/app/page';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/overlays';
@@ -151,6 +152,8 @@ export default function SyncPage() {
           );
         })}
       </div>
+
+      <PhoneSyncCard />
 
       <SectionTitle>История</SectionTitle>
       {!log ? (

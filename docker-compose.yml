@@ -18,8 +18,10 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    # По умолчанию — только этот компьютер. Для телефона в домашней сети (CardDAV):
+    # BACKEND_BIND=0.0.0.0 в файле .env рядом с этим файлом, см. docs/setup_phone.md
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${BACKEND_BIND:-127.0.0.1}:8000:8000"
     depends_on:
       - mongo
     env_file:

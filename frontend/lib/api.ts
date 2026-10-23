@@ -518,3 +518,13 @@ export function homeKey(): string {
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
   return `/api/home?today=${local}`;
 }
+
+// ---------------------------------------------------------------------------
+// Телефон (CardDAV)
+// ---------------------------------------------------------------------------
+
+export interface CarddavStatus {
+  enabled: boolean;
+  username: string;
+  path: string;
+}

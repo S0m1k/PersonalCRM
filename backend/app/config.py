@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # Интервал фонового sync (мин). Без вебхуков (локальный запуск) — ставим поменьше, напр. 5.
     sync_interval_minutes: int = 30
 
+    # CardDAV (контакты в iPhone / Android): логин ADMIN_USERNAME + этот пароль.
+    # Отдельный пароль — его хранит телефон. Не задан — CardDAV выключен (404).
+    carddav_password: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

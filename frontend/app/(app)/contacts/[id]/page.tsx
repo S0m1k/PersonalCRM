@@ -93,6 +93,7 @@ const SOURCE_LABELS: Record<string, string> = {
   csv: 'CSV',
   vcard: 'vCard',
   telegram: 'Telegram',
+  phone: 'Телефон',
 };
 
 export default function ContactPage() {
