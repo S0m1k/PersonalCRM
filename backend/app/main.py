@@ -15,9 +15,11 @@ from .carddav import router as carddav_router
 from .config import check_secrets, settings
 from .db import close_db, connect_db, get_db
 from .ratelimit import RateLimitMiddleware
+from .storage import prepare_attachments_storage
 from .repositories import users as users_repo
 
 logger = logging.getLogger(__name__)
+from .routers import attachments as attachments_router
 from .routers import auth as auth_router
 from .routers import contacts as contacts_router
 from .routers import home as home_router
@@ -38,6 +40,7 @@ async def lifespan(app: FastAPI):
         await ensure_legacy_admin(get_db())
     except Exception as exc:  # noqa: BLE001 — без БД приложение всё равно стартует
         logger.warning("Не удалось подготовить коллекцию users: %s", exc)
+    await prepare_attachments_storage()
 
     # Планировщик отключается в тестах (ENABLE_SCHEDULER=false), чтобы не
     # запускать фоновые задачи под TestClient.
@@ -90,6 +93,8 @@ app.include_router(auth_router.router)
 
 # Contacts: /api/contacts/* — требуют токена
 app.include_router(contacts_router.router)
+# Вложения к контактам: /api/contacts/{id}/attachments (файлы — в S3 / MinIO)
+app.include_router(attachments_router.router)
 
 # Шаблоны карточек и вопросы к человеку (Sprint 5)
 app.include_router(templates_router.router)

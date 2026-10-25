@@ -16,6 +16,7 @@ from ..models.contact import ContactCreate, ContactOut, ContactUpdate
 from ..repositories import contacts as repo
 from ..repositories import questions as questions_repo
 from ..repositories import templates as templates_repo
+from ..services.attachments import delete_for_contact as delete_attachments
 from ..services.fields import FieldValidationError, validate_field_values
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -152,7 +153,7 @@ async def delete_contact(
     db: DbDep,
     _user: AuthDep,
 ) -> None:
-    """Удалить контакт по ID. Возвращает 204 No Content при успехе."""
+    """Удалить контакт по ID вместе с вопросами и файлами. Возвращает 204 No Content при успехе."""
     deleted = await repo.delete_contact(db, contact_id)
     if not deleted:
         raise HTTPException(
@@ -160,3 +161,4 @@ async def delete_contact(
             detail=f"Контакт {contact_id!r} не найден",
         )
     await questions_repo.delete_for_contact(db, contact_id)
+    await delete_attachments(db, contact_id)

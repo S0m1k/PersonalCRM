@@ -21,6 +21,19 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
 
+  # Вложения к контактам (S3). Наружу не открыт: к файлам ходит только backend.
+  # Логин/пароль — в backend/minio.env (создаёт scripts/init_env.py); его же читает backend.
+  # Официальные образы MinIO больше не публикуются — community-сборка того же сервера.
+  # Bucket создаёт backend при старте.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    restart: unless-stopped
+    command: ["server", "/data"]
+    env_file:
+      - ./backend/minio.env
+    volumes:
+      - minio_data:/data
+
   backend:
     build: ./backend
     restart: unless-stopped
@@ -31,12 +44,15 @@ services:
     depends_on:
       - mongo
       - redis
+      - minio
     env_file:
       - ./backend/.env
+      - ./backend/minio.env
     environment:
       # Внутри docker-сети база доступна по имени сервиса — перекрывает значение из .env
       MONGODB_URI: mongodb://mongo:27017
       REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
 
   frontend:
     build:
@@ -52,4 +68,6 @@ services:
 
 volumes:
   mongo_data:
+    driver: local
+  minio_data:
     driver: local

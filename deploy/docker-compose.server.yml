@@ -9,6 +9,8 @@ services:
     restart: always
   redis:
     restart: always
+  minio:
+    restart: always
   backend:
     restart: always
     environment:

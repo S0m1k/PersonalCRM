@@ -12,6 +12,9 @@ TestClient (его задачи лезли бы в сеть/БД по интер
 при старте создаёт коллекцию users, и без подмены записал бы её в настоящую
 базу из настроек (например, в локальный docker на этом компьютере).
 
+S3 (вложения) во всех тестах — in-memory moto: ни один тест не ходит в настоящее
+хранилище, даже если lifespan создаёт bucket при старте.
+
 Рейт-лимиты в общих тестах выключены (десятки входов подряд), их проверяет
 test_ratelimit.py.
 """
@@ -37,6 +40,14 @@ _TEST_SETTINGS = {
     "RATE_LIMIT_ENABLED": "false",
     "TRUST_PROXY_HEADERS": "false",
     "REGISTRATION_OPEN": "true",
+    # Вложения: S3 подменяет moto (in-memory), адрес пустой — запросы «к AWS» перехватываются
+    "S3_ENDPOINT_URL": "",
+    "S3_ACCESS_KEY": "testing",
+    "S3_SECRET_KEY": "testing",
+    "S3_BUCKET": "test-attachments",
+    "S3_REGION": "us-east-1",
+    "ATTACHMENT_MAX_MB": "25",
+    "ATTACHMENTS_QUOTA_MB": "500",
 }
 os.environ.update(_TEST_SETTINGS)
 
@@ -47,8 +58,10 @@ import app.db as _db_module  # noqa: E402
 _db_module.AsyncIOMotorClient = AsyncMongoMockClient
 
 import pytest  # noqa: E402
+from moto import mock_aws  # noqa: E402
 
 from app.auth import reset_legacy_check  # noqa: E402
+from app.storage import reset_storage  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -56,3 +69,12 @@ def _fresh_legacy_admin_check():
     """У каждого теста своя in-memory база — перенос первого пользователя проверяется заново."""
     reset_legacy_check()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _fake_s3():
+    """Пустое in-memory S3 на каждый тест; клиент создаётся заново внутри подмены."""
+    with mock_aws():
+        reset_storage()
+        yield
+    reset_storage()

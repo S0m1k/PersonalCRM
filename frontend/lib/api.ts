@@ -582,3 +582,84 @@ export interface CarddavStatus {
   username: string;
   path: string;
 }
+
+// ---------------------------------------------------------------------------
+// Вложения к контактам (файлы — в S3 / MinIO, скачивание — через backend)
+// ---------------------------------------------------------------------------
+
+export interface Attachment {
+  id: string;
+  contact_id: string;
+  file_name: string;
+  size: number;
+  content_type: string;
+  created_at: string;
+}
+
+export interface AttachmentUsage {
+  used: number;
+  quota: number;
+  max_file_size: number;
+}
+
+export const attachmentUsageKey = '/api/attachments/usage';
+
+export function attachmentsKey(contactId: string): string {
+  return `/api/contacts/${contactId}/attachments`;
+}
+
+/** Загрузка через XMLHttpRequest: у fetch нет прогресса отправки. onProgress — доля 0…1. */
+export function uploadAttachment(
+  contactId: string,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<Attachment> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const form = new FormData();
+    form.append('file', file);
+    xhr.open('POST', `${API_URL}${attachmentsKey(contactId)}`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+    };
+    xhr.onerror = () => reject(new ApiError(0, 'Нет связи с сервером'));
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        clearToken();
+        reject(new ApiError(401, 'Не авторизован'));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        void errorMessage(new Response(xhr.responseText, { status: xhr.status })).then((msg) =>
+          reject(new ApiError(xhr.status, msg || 'Не удалось загрузить файл')),
+        );
+        return;
+      }
+      resolve(JSON.parse(xhr.responseText) as Attachment);
+    };
+    xhr.send(form);
+  });
+}
+
+/** Скачать файл: ссылка без токена не сработает, поэтому — fetch с Bearer и сохранение blob. */
+export async function downloadAttachment(attachment: Attachment): Promise<void> {
+  const token = getToken();
+  const resp = await fetch(`${API_URL}${attachmentsKey(attachment.contact_id)}/${attachment.id}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resp.ok) throw new ApiError(resp.status, await errorMessage(resp));
+  const url = URL.createObjectURL(await resp.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = attachment.file_name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export function deleteAttachment(contactId: string, attachmentId: string): Promise<void> {
+  return apiFetch<void>(`${attachmentsKey(contactId)}/${attachmentId}`, { method: 'DELETE' });
+}

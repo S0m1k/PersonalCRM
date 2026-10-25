@@ -4,6 +4,7 @@
 
 from typing import Optional
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_SECRET_KEY = "change-me-in-production"
@@ -69,6 +70,18 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     # Брать IP клиента из X-Real-IP (его ставит Caddy перед backend). Без прокси — false.
     trust_proxy_headers: bool = False
+
+    # Вложения к контактам: S3-совместимое хранилище (MinIO в docker compose, см. app/storage.py).
+    # Без S3_ENDPOINT_URL — адреса AWS; ключи можно не задавать отдельно, если они те же, что у MinIO.
+    s3_endpoint_url: Optional[str] = None
+    s3_access_key: Optional[str] = Field(default=None, validation_alias=AliasChoices("s3_access_key", "minio_root_user"))
+    s3_secret_key: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("s3_secret_key", "minio_root_password")
+    )
+    s3_bucket: str = "personalcrm-attachments"
+    s3_region: str = "us-east-1"
+    attachment_max_mb: int = 25
+    attachments_quota_mb: int = 500
 
     model_config = SettingsConfigDict(
         env_file=".env",

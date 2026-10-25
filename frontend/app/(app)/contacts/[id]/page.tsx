@@ -22,6 +22,7 @@ import {
   ListChecks,
   MapPin,
   MoreHorizontal,
+  Paperclip,
   Phone,
   Plus,
   SquareCheck,
@@ -48,6 +49,7 @@ import { Avatar } from '@/components/app/avatar';
 import { TemplateIcon } from '@/components/app/icons';
 import { EmptyState, Page, SectionTitle, Skeleton } from '@/components/app/page';
 import { EditableText, FieldValueEditor, PropertyRow, SelectValue } from '@/components/contact/editable';
+import { AttachmentsPanel } from '@/components/contact/attachments-panel';
 import { MultiValue } from '@/components/contact/multi-value';
 import { QuestionsPanel } from '@/components/contact/questions-panel';
 import { Button } from '@/components/ui/button';
@@ -281,6 +283,9 @@ export default function ContactPage() {
             <TabsTrigger value="questions">
               <CircleHelp /> Вопросы
             </TabsTrigger>
+            <TabsTrigger value="files">
+              <Paperclip /> Файлы
+            </TabsTrigger>
             <TabsTrigger value="sources">
               <Info /> Источники
             </TabsTrigger>
@@ -305,6 +310,10 @@ export default function ContactPage() {
             <QuestionsPanel contactId={contact.id} />
           </TabsContent>
 
+          <TabsContent value="files" className="pt-4">
+            <AttachmentsPanel contactId={contact.id} />
+          </TabsContent>
+
           <TabsContent value="sources" className="pt-4">
             <SourcesInfo contact={contact} />
           </TabsContent>
@@ -312,7 +321,7 @@ export default function ContactPage() {
       </Page>
 
       <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-        <DialogContent title={`Удалить «${name || 'Без имени'}»?`} description="Вместе с контактом удалятся его вопросы. Отменить нельзя.">
+        <DialogContent title={`Удалить «${name || 'Без имени'}»?`} description="Вместе с контактом удалятся его вопросы и файлы. Отменить нельзя.">
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setIsDeleteOpen(false)}>
               Отмена

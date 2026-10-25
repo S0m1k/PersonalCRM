@@ -9,6 +9,7 @@ env/
 # Env / secrets
 .env
 .env.*
+minio.env
 *.local
 # ...но *.example-шаблоны коммитим
 !*.example

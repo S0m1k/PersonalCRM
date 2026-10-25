@@ -104,7 +104,11 @@ async def update(db: AsyncIOMotorDatabase, card: Card, text: str) -> Card:
 
 
 async def delete(db: AsyncIOMotorDatabase, card: Card) -> None:
-    """Удаление с телефона — в корзину (contacts_trash), чтобы случайное удаление можно было вернуть."""
+    """
+    Удаление с телефона — в корзину (contacts_trash), чтобы случайное удаление можно было вернуть.
+    Вложения (коллекция attachments и файлы в S3) не трогаем: они привязаны к contact_id и вернутся
+    вместе с контактом, если восстановить его с тем же _id. До этого они занимают квоту пользователя.
+    """
     contact_id = str(card.doc["_id"])
     full = await db[CONTACTS].find_one({"_id": card.doc["_id"]})
     if full is None:

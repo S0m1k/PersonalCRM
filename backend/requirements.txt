@@ -27,7 +27,11 @@ apscheduler==3.11.0
 limits==5.8.0
 redis==8.1.0
 
+# Вложения: S3-совместимое хранилище (MinIO в docker compose). Вызовы — через asyncio.to_thread
+boto3==1.43.100
+
 # Тесты
 pytest==8.3.5
 pytest-asyncio==0.25.3
 mongomock-motor==0.0.34
+moto[s3]==5.2.2

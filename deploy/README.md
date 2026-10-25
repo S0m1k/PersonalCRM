@@ -6,8 +6,11 @@
 ## Первый запуск
 
 ```bash
-python3 scripts/init_env.py                      # backend/.env со случайными секретами
+python3 scripts/init_env.py                      # backend/.env и backend/minio.env со случайными секретами
 ```
+
+Уже работающий сервер без вложений: тот же `init_env.py` создаст только недостающий `backend/minio.env`
+(без него `docker compose` не запустится). Пароль MinIO после первого запуска не менять — он записан в его данных.
 
 В `backend/.env` поправить (`TRUST_PROXY_HEADERS=true` задаёт `deploy/docker-compose.server.yml`):
 
@@ -43,3 +46,6 @@ docker compose -p personalcrm -f docker-compose.yml -f deploy/docker-compose.ser
 ```bash
 python3 scripts/backup.py --dir /mnt/backup/crm   # лучше на другой диск или машину
 ```
+
+В копию входят базы MongoDB и файлы-вложения из MinIO (том `minio_data`), см. `scripts/backup.py`.
+Файлы отдаются через backend (MinIO наружу не открыт); тело запроса на загрузку — до 25 МБ (+ запас на multipart).

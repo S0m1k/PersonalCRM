@@ -58,6 +58,10 @@ def _is_dav(path: str) -> bool:
     return path == "/dav" or path.startswith("/dav/") or path == "/.well-known/carddav"
 
 
+def _is_attachment_upload(path: str) -> bool:
+    return path.startswith("/api/contacts/") and path.rstrip("/").endswith("/attachments")
+
+
 RULES: tuple[Rule, ...] = (
     # Без токена — по IP: перебор паролей и массовая регистрация
     _rule("register", "5/hour;20/day", "ip", lambda m, p: m == "POST" and p == "/api/auth/register"),
@@ -70,6 +74,8 @@ RULES: tuple[Rule, ...] = (
     # Тяжёлые операции: разбор файлов и походы во внешние API
     _rule("import", "20/hour", "user", lambda m, p: m == "POST" and p.startswith("/api/import/")),
     _rule("sync", "30/minute;300/hour", "user", lambda m, p: m == "POST" and p.startswith("/api/sync/")),
+    # Загрузка вложений: до 25 МБ каждое — трафик и место на диске
+    _rule("upload", "30/hour;200/day", "user", lambda m, p: m == "POST" and _is_attachment_upload(p)),
     # Всё остальное API
     _rule("write", "60/minute;1000/hour", "user", lambda m, p: m not in READ_METHODS and p.startswith("/api/")),
     _rule("read", "300/minute", "user", lambda m, p: p.startswith("/api/") and p != "/api/health"),

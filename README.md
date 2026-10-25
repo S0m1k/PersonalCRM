@@ -24,8 +24,8 @@
 Нужны **Docker Desktop** и **Python 3** (только для служебных скриптов).
 
 ```bash
-python scripts/init_env.py       # один раз: создаёт backend/.env со случайными секретами
-docker compose up -d --build     # вся система: MongoDB + Redis + backend + frontend
+python scripts/init_env.py       # один раз: создаёт backend/.env и backend/minio.env со случайными секретами
+docker compose up -d --build     # вся система: MongoDB + Redis + MinIO + backend + frontend
 ```
 
 Открыть: **http://localhost:3300** и зарегистрироваться (или войти как `admin` с паролем `ADMIN_PASSWORD` из `backend/.env` —
@@ -43,6 +43,16 @@ docker compose up -d --build     # вся система: MongoDB + Redis + back
 
 Пошагово: [docs/setup_oauth.md](docs/setup_oauth.md).
 
+### Файлы к контактам
+
+Вкладка «Файлы» в карточке контакта: загрузка (кнопкой или перетаскиванием), скачивание, удаление.
+Файлы лежат в MinIO (S3-совместимое хранилище в том же docker compose, наружу не открыт), список — в базе пользователя.
+Лимиты: 25 МБ на файл и 500 МБ на пользователя (`ATTACHMENT_MAX_MB`, `ATTACHMENTS_QUOTA_MB` в `backend/.env`).
+Вместо MinIO подойдёт любой S3: `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` в `backend/.env`.
+
+Если `backend/.env` создан до появления вложений — снова запустите `python scripts/init_env.py`: он допишет только
+недостающий `backend/minio.env`.
+
 ### Резервные копии
 
 ```bash
@@ -50,6 +60,9 @@ python scripts/backup.py                       # копия в ./backups, хра
 python scripts/backup.py --dir D:/Backups/crm   # лучше — на другой диск или в облачную папку
 python scripts/backup.py --restore backups/personalcrm-YYYYMMDD-HHMMSS.archive.gz
 ```
+
+Рядом с дампом базы кладётся архив файлов-вложений `personalcrm-files-YYYYMMDD-HHMMSS.tar.gz`
+(его снимает backend из S3/MinIO); `--restore` восстанавливает и его, если он лежит рядом.
 
 ### Разработка
 
