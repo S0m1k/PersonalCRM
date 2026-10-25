@@ -16,6 +16,8 @@ services:
       TRUST_PROXY_HEADERS: "true"
     ports: !override
       - "127.0.0.1:8000:8000"
+  ai-worker:
+    restart: always
   frontend:
     restart: always
     build:
