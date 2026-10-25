@@ -190,6 +190,21 @@ class TestAskByName:
         assert context[0]["phones"] == ["8 (921) 553-53-33"]
 
 
+class TestCompactCard:
+    def test_only_filled_fields_and_contacts_first(self):
+        card = {
+            "id": "1", "name": "Анюта",
+            "fields": [{"key": "city", "label": "Город", "value": "Дубай"}, {"key": "family", "label": "Семья", "value": ""}],
+            "phones": [{"value": "8 (921) 553-53-33", "label": "мобильный"}],
+            "emails": [], "relationships": [], "priority": "", "open_questions": [], "notes": "",
+        }
+
+        compact = ask.compact_card(card)
+
+        assert list(compact) == ["id", "name", "phones", "fields"]
+        assert compact["fields"] == {"Город": "Дубай"}
+
+
 class TestBackfill:
     async def test_old_contacts_get_keys_once(self, db):
         now = datetime.now(timezone.utc)
