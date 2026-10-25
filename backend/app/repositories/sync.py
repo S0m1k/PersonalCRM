@@ -78,6 +78,7 @@ async def create_connection(
     token_expires_at: Optional[datetime] = None,
     sync_contacts: bool = True,
     sync_calendar: bool = False,
+    scopes: Optional[str] = None,
 ) -> SyncConnection:
     """Создать новое подключение с зашифрованными токенами."""
     now = _utcnow()
@@ -91,6 +92,9 @@ async def create_connection(
         "contacts_sync_token": None,
         "contacts_last_sync": None,
         "calendar_last_sync": None,
+        "calendar_sync_state": None,
+        "scopes": scopes,
+        "calendar_needs_consent": False,
         "webhook_subscription_id": None,
         "webhook_expires_at": None,
         "created_at": now,
@@ -172,27 +176,39 @@ def get_decrypted_tokens(conn: SyncConnection) -> tuple[str, Optional[str]]:
 # ---------------------------------------------------------------------------
 
 
-async def save_oauth_state(db: AsyncIOMotorDatabase, state: str, provider: str) -> None:
-    """Запомнить выданный state, чтобы callback принял только его."""
+async def save_oauth_state(
+    db: AsyncIOMotorDatabase, state: str, provider: str, connection_id: Optional[str] = None
+) -> None:
+    """
+    Запомнить выданный state, чтобы callback принял только его.
+    connection_id — переподключение существующего подключения (новые права, те же настройки).
+    """
     await db[STATE_COLLECTION].insert_one(
-        {"state": state, "provider": provider, "created_at": _utcnow()}
+        {"state": state, "provider": provider, "connection_id": connection_id, "created_at": _utcnow()}
     )
 
 
-async def consume_oauth_state(db: AsyncIOMotorDatabase, state: Optional[str], provider: str) -> bool:
+async def consume_oauth_state_doc(
+    db: AsyncIOMotorDatabase, state: Optional[str], provider: str
+) -> Optional[dict]:
     """
-    Проверить и сразу удалить state (одноразовый).
-    False — если state не выдавался, выдан другому провайдеру или просрочен.
+    Проверить и сразу удалить state (одноразовый). Возвращает его запись.
+    None — если state не выдавался, выдан другому провайдеру или просрочен.
     """
     if not state:
-        return False
+        return None
     doc = await db[STATE_COLLECTION].find_one_and_delete({"state": state, "provider": provider})
     if doc is None:
-        return False
+        return None
     created = doc["created_at"]
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
-    return _utcnow() - created <= OAUTH_STATE_TTL
+    return doc if _utcnow() - created <= OAUTH_STATE_TTL else None
+
+
+async def consume_oauth_state(db: AsyncIOMotorDatabase, state: Optional[str], provider: str) -> bool:
+    """Как consume_oauth_state_doc, но только да/нет."""
+    return await consume_oauth_state_doc(db, state, provider) is not None
 
 
 # ---------------------------------------------------------------------------

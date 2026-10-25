@@ -3,7 +3,7 @@
 
 Задачи:
   - periodic_sync           каждые SYNC_INTERVAL_MINUTES (по умолч. 30): delta sync всех подключений
-                            (fallback, если вебхуки не сработали)
+                            (fallback, если вебхуки не сработали); календари — тоже (Sprint 7)
   - refresh_expiring_tokens каждые 15 мин: проактивно обновляет токены,
                             истекающие в ближайшие 10 минут
   - renew_webhooks          каждые 12 часов: продлевает Microsoft-подписки
@@ -27,7 +27,10 @@ from ..repositories import users as users_repo
 from ..models.sync import SyncError, SyncStats
 from ..repositories import sync as sync_repo
 from .oauth import google_refresh_token, ms_refresh_token
+from .calendar import run_calendar_sync
+from .calendar_common import CalendarAccessError
 from .microsoft import renew_contact_subscription
+from .oauth import calendar_scope_granted
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +99,27 @@ async def _periodic_sync_db(db: AsyncIOMotorDatabase) -> None:
         await sync_repo.update_log(
             db, log.id, stats=stats, errors=errors, completed_at=datetime.now(timezone.utc)
         )
+    for conn in connections:
+        await _calendar_sync_conn(db, conn)
+
+
+async def _calendar_sync_conn(db: AsyncIOMotorDatabase, conn) -> None:
+    """Календарь подключения — если включён и права выданы (иначе ждём переподключения)."""
+    if not conn.sync_calendar or conn.calendar_needs_consent:
+        return
+    if not calendar_scope_granted(conn.provider, conn.scopes):
+        return
+    stats, errors = SyncStats(), []
+    log = await sync_repo.create_log(db, connection_id=conn.id, type="calendar", action="scheduled")
+    try:
+        await run_calendar_sync(db, conn, stats, errors)
+    except CalendarAccessError:
+        errors.append(SyncError(error="Нет доступа к календарю — нужно переподключение"))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("calendar sync failed for %s: %s", conn.id, exc)
+        stats.errors += 1
+        errors.append(SyncError(error=str(exc)))
+    await sync_repo.update_log(db, log.id, stats=stats, errors=errors, completed_at=datetime.now(timezone.utc))
 
 
 async def _refresh_tokens_db(db: AsyncIOMotorDatabase) -> None:
@@ -113,7 +137,7 @@ async def _refresh_tokens_db(db: AsyncIOMotorDatabase) -> None:
             continue
         try:
             if conn.provider == "microsoft":
-                data = await ms_refresh_token(refresh_token)
+                data = await ms_refresh_token(refresh_token, conn.scopes)
             elif conn.provider == "google":
                 data = await google_refresh_token(refresh_token)
             else:
@@ -130,6 +154,8 @@ async def _refresh_tokens_db(db: AsyncIOMotorDatabase) -> None:
         # Google при refresh не возвращает новый refresh_token — сохраняем старый
         if data.get("refresh_token"):
             fields["refresh_token"] = data["refresh_token"]
+        if data.get("scope"):
+            fields["scopes"] = data["scope"]
         await sync_repo.update_connection(db, conn.id, **fields)
         logger.info("refreshed token for connection %s", conn.id)
 

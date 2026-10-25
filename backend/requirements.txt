@@ -29,6 +29,8 @@ redis==8.1.0
 
 # Вложения: S3-совместимое хранилище (MinIO в docker compose). Вызовы — через asyncio.to_thread
 boto3==1.43.100
+# Часовые пояса для zoneinfo (на Windows нет системной базы поясов)
+tzdata==2026.5
 
 # Тесты
 pytest==8.3.5

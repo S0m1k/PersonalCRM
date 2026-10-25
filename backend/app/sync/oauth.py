@@ -28,8 +28,12 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-# ReadWrite — нужен для двустороннего sync (push правок из CRM в Outlook)
-_MS_SCOPES = "Contacts.ReadWrite User.Read offline_access"
+# ReadWrite — нужен для двустороннего sync (push правок из CRM в Outlook).
+# Calendars.ReadWrite добавлен в Sprint 7: подключения, выданные раньше, его не имеют —
+# их нужно переподключить (calendar_scope_granted покажет, есть ли доступ).
+_MS_SCOPES = "Contacts.ReadWrite Calendars.ReadWrite User.Read offline_access"
+# Права подключений до Sprint 7: с ними обновляем токены, если выданные права неизвестны
+_MS_LEGACY_SCOPES = "Contacts.ReadWrite User.Read offline_access"
 
 # ---------------------------------------------------------------------------
 # Проверка наличия конфигурации
@@ -105,9 +109,13 @@ async def ms_exchange_code(code: str) -> dict:
     return data
 
 
-async def ms_refresh_token(refresh_token: str) -> dict:
+async def ms_refresh_token(refresh_token: str, scopes: Optional[str] = None) -> dict:
     """
     Обновить истекший access_token через refresh_token.
+
+    scopes — права, выданные подключению (из ответа на обмен кода). Просить при обновлении
+    больше, чем выдано, нельзя — Microsoft ответит ошибкой, поэтому для старых подключений
+    (права неизвестны) просим права до Sprint 7.
 
     Возвращает новый dict с токенами (аналогично ms_exchange_code).
     """
@@ -117,7 +125,7 @@ async def ms_refresh_token(refresh_token: str) -> dict:
         "client_secret": settings.ms_client_secret,
         "refresh_token": refresh_token,
         "grant_type": "refresh_token",
-        "scope": _MS_SCOPES,
+        "scope": _ms_refresh_scopes(scopes),
     }
 
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -129,11 +137,24 @@ async def ms_refresh_token(refresh_token: str) -> dict:
     return data
 
 
+def _ms_refresh_scopes(granted: Optional[str]) -> str:
+    """Права для refresh: выданные (только из запрошенных нами) или права до Sprint 7."""
+    if not granted:
+        return _MS_LEGACY_SCOPES
+    wanted = {s.lower(): s for s in _MS_SCOPES.split()}
+    names = {g.rsplit("/", 1)[-1].lower() for g in granted.split()}
+    picked = [wanted[n] for n in wanted if n in names]
+    if "offline_access" not in [p.lower() for p in picked]:
+        picked.append("offline_access")
+    return " ".join(picked)
+
+
 # ===========================================================================
 # Google OAuth 2.0 (Sprint 3)
 # ===========================================================================
 
-_GOOGLE_SCOPES = "https://www.googleapis.com/auth/contacts"
+# calendar.events — чтение и запись событий (Sprint 7); подключения до Sprint 7 его не имеют
+_GOOGLE_SCOPES = "https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/calendar.events"
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
@@ -158,6 +179,7 @@ def google_authorize_url(state: str = "") -> str:
         "scope": _GOOGLE_SCOPES,
         "access_type": "offline",   # чтобы получить refresh_token
         "prompt": "consent",        # форсим refresh_token при повторном connect
+        "include_granted_scopes": "true",  # переподключение добавляет права к уже выданным
     }
     if state:
         params["state"] = state
@@ -199,3 +221,25 @@ async def google_refresh_token(refresh_token: str) -> dict:
     # Google при refresh не возвращает новый refresh_token — сохраняем старый
     logger.info("google_refresh_token: токены обновлены, expires_in=%s", data.get("expires_in"))
     return data
+
+
+# ===========================================================================
+# Есть ли у подключения доступ к календарю
+# ===========================================================================
+
+
+def calendar_scope_granted(provider: str, scopes: Optional[str]) -> bool:
+    """
+    По строке выданных прав (поле scope ответа OAuth) — можно ли читать и писать календарь.
+    None — подключение создано до Sprint 7 (права не сохранялись) → доступа нет.
+    """
+    if not scopes:
+        return False
+    granted = {s.lower() for s in scopes.split()}
+    if provider == "microsoft":
+        return any(s.rsplit("/", 1)[-1] == "calendars.readwrite" for s in granted)
+    if provider == "google":
+        return bool(
+            granted & {"https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar"}
+        )
+    return False

@@ -21,6 +21,7 @@ from .repositories import users as users_repo
 logger = logging.getLogger(__name__)
 from .routers import attachments as attachments_router
 from .routers import auth as auth_router
+from .routers import calendar as calendar_router
 from .routers import contacts as contacts_router
 from .routers import home as home_router
 from .routers import questions as questions_router
@@ -100,6 +101,9 @@ app.include_router(attachments_router.router)
 app.include_router(templates_router.router)
 app.include_router(questions_router.router)
 app.include_router(home_router.router)
+
+# Календарь: /api/calendar/* — события, привязанные к людям (Sprint 7)
+app.include_router(calendar_router.router)
 
 # Sync: /api/sync/* — подключение провайдеров и синхронизация (Sprint 2)
 app.include_router(sync_router.router)

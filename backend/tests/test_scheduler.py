@@ -38,7 +38,7 @@ async def test_refresh_expiring_token(monkeypatch):
     db = AsyncMongoMockClient()["sched_test1"]
     monkeypatch.setattr(sch, "get_db", lambda: db)
 
-    async def fake_ms_refresh(rt: str) -> dict:
+    async def fake_ms_refresh(rt: str, scopes=None) -> dict:
         assert rt == "the-refresh-token"
         return {"access_token": "fresh-access", "expires_in": 3600}
 
@@ -66,7 +66,7 @@ async def test_refresh_skips_fresh_token(monkeypatch):
 
     called = {"n": 0}
 
-    async def fake_ms_refresh(rt: str) -> dict:
+    async def fake_ms_refresh(rt: str, scopes=None) -> dict:
         called["n"] += 1
         return {"access_token": "x", "expires_in": 3600}
 

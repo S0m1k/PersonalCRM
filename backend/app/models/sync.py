@@ -51,6 +51,13 @@ class SyncConnection(BaseModel):
     contacts_last_sync: Optional[datetime] = None
     calendar_last_sync: Optional[datetime] = None
 
+    # Календарь (Sprint 7): deltaLink Graph или syncToken Google
+    calendar_sync_state: Optional[str] = None
+    # Выданные права (поле scope ответа OAuth); None — подключение до Sprint 7
+    scopes: Optional[str] = None
+    # Провайдер ответил 401/403 на запрос к календарю — нужно переподключение
+    calendar_needs_consent: bool = False
+
     # Webhooks (Sprint 3)
     webhook_subscription_id: Optional[str] = None
     webhook_expires_at: Optional[datetime] = None
@@ -90,12 +97,16 @@ class SyncConnectionOut(BaseModel):
     sync_calendar: bool
     contacts_last_sync: Optional[datetime] = None
     calendar_last_sync: Optional[datetime] = None
+    # Есть ли права на календарь; False — нужно переподключить аккаунт
+    calendar_access: bool = False
     token_expires_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
     @classmethod
     def from_connection(cls, conn: SyncConnection) -> "SyncConnectionOut":
+        from ..sync.oauth import calendar_scope_granted
+
         return cls(
             id=conn.id,
             provider=conn.provider,
@@ -103,6 +114,7 @@ class SyncConnectionOut(BaseModel):
             sync_calendar=conn.sync_calendar,
             contacts_last_sync=conn.contacts_last_sync,
             calendar_last_sync=conn.calendar_last_sync,
+            calendar_access=calendar_scope_granted(conn.provider, conn.scopes) and not conn.calendar_needs_consent,
             token_expires_at=conn.token_expires_at,
             created_at=conn.created_at,
             updated_at=conn.updated_at,
@@ -112,6 +124,13 @@ class SyncConnectionOut(BaseModel):
 # ---------------------------------------------------------------------------
 # SyncLog
 # ---------------------------------------------------------------------------
+
+
+class SyncConnectionUpdate(BaseModel):
+    """Настройки подключения, которые меняет пользователь."""
+
+    sync_contacts: Optional[bool] = None
+    sync_calendar: Optional[bool] = None
 
 
 class SyncStats(BaseModel):

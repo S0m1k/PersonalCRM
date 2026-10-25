@@ -76,6 +76,9 @@ RULES: tuple[Rule, ...] = (
     _rule("sync", "30/minute;300/hour", "user", lambda m, p: m == "POST" and p.startswith("/api/sync/")),
     # Загрузка вложений: до 25 МБ каждое — трафик и место на диске
     _rule("upload", "30/hour;200/day", "user", lambda m, p: m == "POST" and _is_attachment_upload(p)),
+    # Изменения событий календаря ходят в Outlook / Google
+    _rule("calendar", "30/minute;300/hour", "user",
+          lambda m, p: m not in READ_METHODS and p.startswith("/api/calendar/")),
     # Всё остальное API
     _rule("write", "60/minute;1000/hour", "user", lambda m, p: m not in READ_METHODS and p.startswith("/api/")),
     _rule("read", "300/minute", "user", lambda m, p: p.startswith("/api/") and p != "/api/health"),
