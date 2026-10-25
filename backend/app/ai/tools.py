@@ -19,6 +19,7 @@ from ..models.template import FieldDef
 from ..repositories import contacts as contacts_repo
 from ..repositories import questions as questions_repo
 from ..repositories import templates as templates_repo
+from ..services import phones
 from ..services.fields import FieldValidationError, validate_field_values
 
 # Основные поля карточки, которые ИИ может менять (имя — только при создании контакта)
@@ -52,6 +53,18 @@ NICKNAMES: dict[str, tuple[str, ...]] = {
 }
 
 
+_EMAIL_IN_TEXT = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def contacts_in_text(text: str) -> list[str]:
+    """
+    Номера телефонов и email из текста — поисковые запросы, которые не нужно доверять
+    модели: она их теряет или переписывает. Номер — сразу в виде ключа (+79215535333).
+    """
+    found = [*phones.find_in_text(text), *_EMAIL_IN_TEXT.findall(text)]
+    return list(dict.fromkeys(found))
+
+
 def name_variants(name: str) -> list[str]:
     """Полные формы уменьшительного имени (Петя → Пётр); для остальных — пусто."""
     return list(NICKNAMES.get(name.strip().lower(), ()))
@@ -71,21 +84,28 @@ def _fuzzy(term: str) -> str:
     return re.sub("[её]", "[её]", re.sub("[ЕЁ]", "[ЕЁ]", escaped))
 
 
-_SEARCH_FIELDS = ("first_name", "last_name", "company", "city", "position", "custom_fields.value", "notes")
+_SEARCH_FIELDS = (
+    "first_name", "last_name", "company", "city", "position", "emails.value", "custom_fields.value", "notes",
+)
 
 
 async def search_contacts(db: AsyncIOMotorDatabase, query: str, limit: int = SEARCH_LIMIT) -> list[dict]:
     """
-    Контакты, у которых каждое слово запроса есть в одном из полей
-    (имя, фамилия, компания, город, должность, свои поля, заметки).
+    Контакты по запросу. Номер телефона (в любой записи: 8…, +7…, со скобками) ищется
+    по ключу Phone.normalized; иначе — каждое слово запроса должно быть в одном из полей
+    (имя, фамилия, компания, город, должность, email, свои поля, заметки).
     """
-    terms = [t for t in re.split(r"\s+", query.strip()) if t][:4]
-    if not terms:
-        return []
-    clauses = [
-        {"$or": [{f: {"$regex": _fuzzy(t), "$options": "i"}} for f in _SEARCH_FIELDS]} for t in terms
-    ]
-    docs = await db[contacts_repo.COLLECTION].find({"$and": clauses}).limit(limit).to_list(length=limit)
+    phone_pattern = phones.search_pattern(query)
+    if phone_pattern:
+        mongo_query: dict[str, Any] = {"phones.normalized": {"$regex": phone_pattern}}
+    else:
+        terms = [t for t in re.split(r"\s+", query.strip()) if t][:4]
+        if not terms:
+            return []
+        mongo_query = {
+            "$and": [{"$or": [{f: {"$regex": _fuzzy(t), "$options": "i"}} for f in _SEARCH_FIELDS]} for t in terms]
+        }
+    docs = await db[contacts_repo.COLLECTION].find(mongo_query).limit(limit).to_list(length=limit)
     return [summary(ContactOut.from_mongo(d)) for d in docs]
 
 
@@ -113,7 +133,11 @@ async def _template_defs(db: AsyncIOMotorDatabase, contact: Optional[ContactOut]
 
 
 async def get_contact(db: AsyncIOMotorDatabase, contact_id: str) -> dict:
-    """Карточка для модели: поля с подписями, открытые вопросы, хвост заметок."""
+    """
+    Карточка для модели — всё, что видит пользователь: поля с подписями (их ИИ может менять),
+    телефоны, почта, связи и приоритет (только для чтения), открытые вопросы, хвост заметок.
+    Служебное (id синхронизации, отпечатки, CardDAV) не передаём: модели оно не нужно.
+    """
     contact = await _require_contact(db, contact_id)
     defs = await _template_defs(db, contact)
     questions = await questions_repo.list_questions(db, status="open", contact_id=contact_id, limit=20)
@@ -129,9 +153,25 @@ async def get_contact(db: AsyncIOMotorDatabase, contact_id: str) -> dict:
         "id": contact.id,
         "name": full_name(contact),
         "fields": fields,
+        "phones": [{"value": p.value, "label": p.label} for p in contact.phones],
+        "emails": [{"value": e.value, "label": e.label} for e in contact.emails],
+        "relationships": await _relationships(db, contact),
+        "priority": contact.priority,
         "open_questions": [{"id": q.id, "text": q.text} for q in questions],
         "notes": contact.notes[-NOTES_CONTEXT:],
     }
+
+
+async def _relationships(db: AsyncIOMotorDatabase, contact: ContactOut) -> list[dict]:
+    """Связи с другими контактами — с именами, а не id (одним запросом)."""
+    if not contact.relationships:
+        return []
+    ids = [r.contact_id for r in contact.relationships]
+    names = {
+        c.id: full_name(c)
+        for c in await contacts_repo.get_contacts_by_ids(db, ids)
+    }
+    return [{"name": names.get(r.contact_id, "?"), "label": r.label} for r in contact.relationships]
 
 
 def _clean_value(value: Any) -> str:

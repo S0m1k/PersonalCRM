@@ -15,6 +15,8 @@ export const API_URL =
 export interface Phone {
   value: string;
   label: string;
+  /** Ключ номера (+79215535333) — вычисляет сервер, присылать не нужно */
+  normalized?: string;
 }
 
 export interface Email {

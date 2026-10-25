@@ -200,7 +200,7 @@ class TestReadWrite:
         assert created.headers["etag"]
         assert "UID:PHONE-UID-1" in fetched.text
         listed = client.get("/api/contacts/?q=Козлова", headers=jwt).json()
-        assert listed[0]["phones"] == [{"value": "+7 921 555-12-12", "label": "мобильный"}]
+        assert listed[0]["phones"] == [{"value": "+7 921 555-12-12", "label": "мобильный", "normalized": "+79215551212"}]
         assert listed[0]["source"] == "phone"
 
     def test_put_update_keeps_crm_only_data(self, client, dav, jwt):

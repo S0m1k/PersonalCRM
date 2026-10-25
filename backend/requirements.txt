@@ -23,6 +23,9 @@ cryptography==44.0.2
 # Фоновый планировщик (Sprint 3)
 apscheduler==3.11.0
 
+# Телефоны: разбор и нормализация номеров (порт Google libphonenumber)
+phonenumbers==9.0.41
+
 # Рейт-лимиты: счётчики в Redis (redis-py asyncio), без Redis — в памяти
 limits==5.8.0
 redis==5.2.1   # arq и limits требуют redis<6 / <8

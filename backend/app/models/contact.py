@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from bson import ObjectId
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from ..services.phones import phone_key
 
 
 # ---------------------------------------------------------------------------
@@ -24,6 +26,27 @@ class Phone(BaseModel):
 
     value: str = Field(..., description="Номер телефона")
     label: str = Field(default="телефон", description="Метка (мобильный, рабочий, …)")
+    # Ключ для сравнения: +79215535333 для 8 (921) 553-53-33 и любой другой записи того же номера.
+    # Всегда вычисляется из value — присланное клиентом значение игнорируется.
+    normalized: str = Field(default="", description="Номер в E.164 (или только цифры), вычисляется сервером")
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "Phone":
+        self.normalized = phone_key(self.value)
+        return self
+
+
+def dedupe_phones(phones: list[Phone]) -> list[Phone]:
+    """Один номер в разных записях (89…, +79…) — оставить первую."""
+    seen: set[str] = set()
+    result: list[Phone] = []
+    for phone in phones:
+        key = phone.normalized or phone.value.strip()
+        if key and key in seen:
+            continue
+        seen.add(key)
+        result.append(phone)
+    return result
 
 
 class Email(BaseModel):
@@ -101,6 +124,11 @@ class ContactBase(BaseModel):
     def empty_template_is_none(cls, v: Any) -> Optional[str]:
         return v or None
 
+    @field_validator("phones")
+    @classmethod
+    def _unique_phones(cls, v: list[Phone]) -> list[Phone]:
+        return dedupe_phones(v)
+
     @field_validator("birthday", mode="before")
     @classmethod
     def validate_birthday(cls, v: Any) -> Optional[str]:
@@ -150,6 +178,11 @@ class ContactUpdate(BaseModel):
     # "" — снять шаблон (None означает «не менять»)
     template_id: Optional[str] = None
     fields: Optional[dict[str, Any]] = None
+
+    @field_validator("phones")
+    @classmethod
+    def _unique_phones(cls, v: Optional[list[Phone]]) -> Optional[list[Phone]]:
+        return dedupe_phones(v) if v is not None else None
 
     @field_validator("birthday", mode="before")
     @classmethod

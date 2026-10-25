@@ -16,7 +16,8 @@ from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ReturnDocument
 
-from ..models.contact import ContactCreate, ContactOut, ContactUpdate
+from ..models.contact import ContactCreate, ContactOut, ContactUpdate, Phone
+from ..services import phones
 
 COLLECTION = "contacts"
 
@@ -81,6 +82,15 @@ async def get_contact_by_id(
     return ContactOut.from_mongo(doc)
 
 
+async def get_contacts_by_ids(db: AsyncIOMotorDatabase, contact_ids: list[str]) -> list[ContactOut]:
+    """Несколько контактов одним запросом; невалидные и несуществующие id пропускаются."""
+    oids = [oid for oid in (_parse_oid(c) for c in contact_ids) if oid is not None]
+    if not oids:
+        return []
+    docs = await db[COLLECTION].find({"_id": {"$in": oids}}).to_list(length=len(oids))
+    return [ContactOut.from_mongo(d) for d in docs]
+
+
 async def list_contacts(
     db: AsyncIOMotorDatabase,
     q: Optional[str] = None,
@@ -93,7 +103,8 @@ async def list_contacts(
     """
     Список контактов с поиском и фильтрацией.
 
-    - q: поиск по имени, фамилии, компании, email, телефону (регексп, без учёта регистра)
+    - q: поиск по имени, фамилии, компании, email, телефону (регексп, без учёта регистра;
+      номер сравнивается по ключу из services/phones.py, формат записи не важен)
     - category / priority: точная фильтрация по полю
     - skip / limit: пагинация
     """
@@ -111,6 +122,10 @@ async def list_contacts(
             {"emails.value": pattern},
             {"phones.value": pattern},
         ]
+        # Номер в любой записи: 89215535333 найдёт и «+7 921 553-53-33»
+        phone_pattern = phones.search_pattern(q)
+        if phone_pattern:
+            query["$or"].append({"phones.normalized": {"$regex": phone_pattern}})
 
     if category:
         query["category"] = category
@@ -183,3 +198,18 @@ async def delete_contact(db: AsyncIOMotorDatabase, contact_id: str) -> bool:
 
     result = await db[COLLECTION].delete_one({"_id": oid})
     return result.deleted_count == 1
+
+
+async def backfill_phone_keys(db: AsyncIOMotorDatabase) -> int:
+    """
+    Дописать Phone.normalized телефонам, сохранённым до его появления (иначе поиск
+    по номеру их не найдёт). Номера и updated_at не меняются — синхронизация этого не видит.
+    Возвращает число исправленных контактов; повторный запуск ничего не делает.
+    """
+    fixed = 0
+    cursor = db[COLLECTION].find({"phones": {"$elemMatch": {"normalized": {"$exists": False}}}}, {"phones": 1})
+    async for doc in cursor:
+        phones = [Phone(**p).model_dump() for p in doc.get("phones") or [] if p.get("value")]
+        await db[COLLECTION].update_one({"_id": doc["_id"]}, {"$set": {"phones": phones}})
+        fixed += 1
+    return fixed

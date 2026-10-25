@@ -14,10 +14,10 @@ from app.sync.dedup import find_duplicates, merge_contacts, normalize_phone
 
 class TestNormalizePhone:
     def test_strips_formatting(self):
-        assert normalize_phone("+7 (900) 123-45-67") == "79001234567"
+        assert normalize_phone("+7 (900) 123-45-67") == "+79001234567"
 
     def test_russian_8_to_7(self):
-        assert normalize_phone("8-900-123-45-67") == "79001234567"
+        assert normalize_phone("8-900-123-45-67") == "+79001234567"
 
     def test_8_and_plus7_equal(self):
         assert normalize_phone("89001234567") == normalize_phone("+79001234567")

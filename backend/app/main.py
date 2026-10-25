@@ -3,6 +3,7 @@ PersonalCRM — FastAPI backend.
 Точка входа: uvicorn app.main:app
 """
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ from .config import check_secrets, settings
 from .db import close_db, connect_db, get_db
 from .ratelimit import RateLimitMiddleware
 from .storage import prepare_attachments_storage
+from .repositories import contacts as contacts_repo
 from .repositories import users as users_repo
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,19 @@ from .routers import sync as sync_router
 from .routers import webhooks as webhooks_router
 
 
+async def _backfill_phone_keys() -> None:
+    """Разовая миграция: Phone.normalized для контактов всех пользователей."""
+    from .sync.scheduler import user_dbs
+
+    try:
+        for db in await user_dbs():
+            fixed = await contacts_repo.backfill_phone_keys(db)
+            if fixed:
+                logger.info("Ключи телефонов дописаны: %s контактов в %s", fixed, db.name)
+    except Exception as exc:  # noqa: BLE001 — повторится при следующем старте
+        logger.warning("Не удалось дописать ключи телефонов: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle-хук: MongoDB, пользователи, фоновый планировщик."""
@@ -43,6 +58,8 @@ async def lifespan(app: FastAPI):
         await ensure_legacy_admin(get_db())
     except Exception as exc:  # noqa: BLE001 — без БД приложение всё равно стартует
         logger.warning("Не удалось подготовить коллекцию users: %s", exc)
+    # Ключи телефонов у старых контактов — в фоне, старт не ждёт
+    backfill_task = asyncio.create_task(_backfill_phone_keys())
     await prepare_attachments_storage()
 
     # Планировщик отключается в тестах (ENABLE_SCHEDULER=false), чтобы не
@@ -58,6 +75,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    backfill_task.cancel()
     if scheduler_on:
         try:
             from .sync.scheduler import shutdown_scheduler

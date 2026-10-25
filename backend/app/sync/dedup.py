@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 
+from ..services.phones import phone_key
+
 
 # ---------------------------------------------------------------------------
 # Нормализация телефона
@@ -29,16 +31,10 @@ from difflib import SequenceMatcher
 
 def normalize_phone(phone: str) -> str:
     """
-    Нормализовать номер телефона для сравнения.
-
-    Оставляем только цифры. Российские номера вида 8XXXXXXXXXX → 7XXXXXXXXXX.
-    Пример: "+7 (900) 123-45-67" → "79001234567"
-             "8-900-123-45-67"   → "79001234567"
+    Нормализовать номер телефона для сравнения — ключ из services/phones.py.
+    Пример: "+7 (900) 123-45-67", "8-900-123-45-67", "9001234567" → "+79001234567".
     """
-    digits = "".join(c for c in phone if c.isdigit())
-    if len(digits) == 11 and digits.startswith("8"):
-        digits = "7" + digits[1:]
-    return digits
+    return phone_key(phone)
 
 
 # ---------------------------------------------------------------------------

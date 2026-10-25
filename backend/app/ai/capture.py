@@ -102,14 +102,17 @@ CAPTURE_PROMPT = """Ты помощник персональной CRM. Поль
 "new_questions": [], "notes": ["Созвонились, хочет поменять работу"]}}"""
 
 
-async def find_candidates(db: AsyncIOMotorDatabase, person: dict) -> list[dict]:
-    """Кандидаты по полному имени, затем по имени, затем по упоминанию — без повторов."""
+async def find_candidates(db: AsyncIOMotorDatabase, person: dict, text: str = "") -> list[dict]:
+    """
+    Кандидаты по номеру телефона или email из записи (самое надёжное), затем по полному имени,
+    по имени, по упоминанию — без повторов.
+    """
     first = str(person.get("first_name", "")).strip()
     last = str(person.get("last_name", "")).strip()
     mention = str(person.get("mention", "")).strip()
     full = [n for name in (mention, first) for n in tools.name_variants(name)]
-    queries = [f"{first} {last}".strip(), *(f"{n} {last}".strip() for n in full), f"{mention} {last}".strip(),
-               first, *full, mention, last]
+    queries = [*tools.contacts_in_text(text), f"{first} {last}".strip(), *(f"{n} {last}".strip() for n in full),
+               f"{mention} {last}".strip(), first, *full, mention, last]
     found: dict[str, dict] = {}
     for query in dict.fromkeys(q for q in queries if q):
         for item in await tools.search_contacts(db, query):
@@ -174,7 +177,7 @@ async def build_actions(db: AsyncIOMotorDatabase, contact_id: Optional[str], raw
 async def run_capture(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict) -> dict:
     text = str(payload.get("text", "")).strip()
     person = await llm.complete_json(PERSON_PROMPT, text, PERSON_SCHEMA, "person")
-    candidates = await find_candidates(db, person)
+    candidates = await find_candidates(db, person, text)
     cards = [await tools.get_contact(db, c["id"]) for c in candidates]
     raw = await llm.complete_json(
         CAPTURE_PROMPT.format(today=date.today().isoformat()),

@@ -1,7 +1,8 @@
 """
 «Спроси»: вопрос по базе на естественном языке.
 
-1. Модель вынимает из вопроса имена людей и ключевые слова (компании, города, темы).
+1. Модель вынимает из вопроса имена людей и ключевые слова (компании, города, темы);
+   номера телефонов и email вынимает код (tools.contacts_in_text) — модели их не доверяем.
 2. Поиск по базе пользователя (tools.search_contacts), карточки с вопросами — в контекст.
 3. Модель отвечает только по контексту и называет контакты, на которые опиралась.
 Ничего не меняет в базе.
@@ -82,7 +83,8 @@ async def collect_context(db: AsyncIOMotorDatabase, terms: list[str]) -> list[di
 
 async def run_ask(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict) -> dict:
     question = str(payload.get("question", "")).strip()
-    context = await collect_context(db, await _terms(llm, question))
+    terms = [*tools.contacts_in_text(question), *await _terms(llm, question)]
+    context = await collect_context(db, list(dict.fromkeys(terms)))
     user_message = f"<контакты>\n{json.dumps(context, ensure_ascii=False)}\n</контакты>\n\nВопрос: {question}"
     raw = await llm.complete_json(
         ANSWER_PROMPT.format(today=date.today().isoformat()), user_message, ANSWER_SCHEMA, "answer"
