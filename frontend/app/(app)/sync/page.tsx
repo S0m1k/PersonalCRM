@@ -4,7 +4,7 @@
  * Синхронизация (/sync): подключение Outlook / Google, ручной запуск, история.
  */
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { History, Loader2, MoreHorizontal, RefreshCw, Unplug } from 'lucide-react';
@@ -20,6 +20,7 @@ import {
 import { errorText, relativeTime } from '@/lib/utils';
 import { GoogleMark, MicrosoftMark } from '@/components/app/icons';
 import { PhoneSyncCard } from '@/components/app/phone-sync-card';
+import { ConnectionCalendar } from '@/components/calendar/connection-calendar';
 import { EmptyState, Page, PageHeader, SectionTitle, Skeleton } from '@/components/app/page';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/overlays';
@@ -121,7 +122,8 @@ export default function SyncPage() {
               <p className="mb-4 flex-1 text-sm text-muted">{info.hint}</p>
 
               {linked.map((c) => (
-                <div key={c.id} className="mb-2 flex items-center gap-2 rounded-md bg-sidebar px-2.5 py-2 text-sm">
+                <Fragment key={c.id}>
+                <div className="mb-2 flex items-center gap-2 rounded-md bg-sidebar px-2.5 py-2 text-sm">
                   <span className="flex-1 text-muted">
                     {c.contacts_last_sync ? `Обновлено ${relativeTime(c.contacts_last_sync)}` : 'Ещё не синхронизировано'}
                   </span>
@@ -141,6 +143,8 @@ export default function SyncPage() {
                     </MenuContent>
                   </Menu>
                 </div>
+                <ConnectionCalendar connection={c} onChange={() => void mutateConnections()} />
+                </Fragment>
               ))}
 
               {linked.length === 0 && (

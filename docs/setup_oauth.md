@@ -18,6 +18,7 @@
 4. **Certificates & secrets → Client secrets → New client secret**. Срок — 24 месяца. Скопируйте **Value** (не *Secret ID*!) сразу: позже его не показать → это `MS_CLIENT_SECRET`.
 5. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**, отметьте:
    - `Contacts.ReadWrite`
+   - `Calendars.ReadWrite` — календарь (Sprint 7)
    - `User.Read`
    - `offline_access`
 
@@ -33,11 +34,11 @@
 
 1. Откройте https://console.cloud.google.com и войдите аккаунтом, чьи контакты подключаем.
 2. Сверху **Select a project → New project**, имя `PersonalCRM` → **Create**, выберите его.
-3. **APIs & Services → Library** → найдите **Google People API** → **Enable**.
+3. **APIs & Services → Library** → найдите **Google People API** → **Enable**, затем так же **Google Calendar API** → **Enable**.
 4. **APIs & Services → OAuth consent screen** (может называться *Google Auth Platform*):
    - **User type:** *External*
    - **App name:** `PersonalCRM`, почта поддержки — ваша
-   - **Scopes:** добавьте `.../auth/contacts`
+   - **Scopes:** добавьте `.../auth/contacts` и `.../auth/calendar.events` (календарь, Sprint 7)
    - **Test users:** добавьте свой Gmail
 5. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
    - **Application type:** *Web application*
@@ -45,6 +46,22 @@
    - **Create** → скопируйте **Client ID** → `GOOGLE_CLIENT_ID` и **Client secret** → `GOOGLE_CLIENT_SECRET`.
 
 > ⚠️ **Важно про режим Testing.** Пока приложение в режиме *Testing*, Google выдаёт доступ к контактам **только на 7 дней** — потом придётся подключаться заново. Чтобы этого не было: **OAuth consent screen → Publishing status → Publish app**. Проверка Google для личного использования не нужна; при входе Google покажет предупреждение «Приложение не проверено» → *Дополнительно → Перейти на PersonalCRM*. Это нормально: приложение ваше.
+
+---
+
+## Календарь у подключений, сделанных до Sprint 7
+
+Права на календарь (`Calendars.ReadWrite`, `calendar.events`) запрашиваются с Sprint 7. Подключения,
+созданные раньше, их не имеют: контакты продолжают синхронизироваться, а календарь — нет. В
+«Синхронизации» и в «Календаре» у такого подключения будет кнопка **«Разрешить доступ»**: она
+переподключает тот же аккаунт (настройки и история сохраняются) — нужно один раз войти и согласиться.
+
+Что приложение делает с календарём:
+- читает события основного календаря (месяц назад — полгода вперёд, дальше только изменения);
+- создаёт, меняет и удаляет события, если вы делаете это в CRM;
+- участников в Outlook/Google **не отправляет** (иначе ушли бы приглашения от вашего имени);
+- открытые вопросы к участникам дописывает в описание события только если у события отмечено
+  «Дописать открытые вопросы».
 
 ---
 
