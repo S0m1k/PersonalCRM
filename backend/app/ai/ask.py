@@ -78,7 +78,15 @@ async def collect_context(db: AsyncIOMotorDatabase, terms: list[str]) -> list[di
         return [await _card_with_answers(db, cid) for cid in list(found)[:MAX_CONTEXT_CONTACTS]]
     # Поиск ничего не дал (вопрос про всех): краткий список последних контактов
     recent = await contacts_repo.list_contacts(db, limit=FALLBACK_RECENT)
-    return [{**tools.summary(c), "birthday": c.birthday or ""} for c in recent]
+    return [
+        {
+            **tools.summary(c),
+            "birthday": c.birthday or "",
+            "phones": [p.value for p in c.phones],
+            "emails": [e.value for e in c.emails],
+        }
+        for c in recent
+    ]
 
 
 async def run_ask(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict) -> dict:

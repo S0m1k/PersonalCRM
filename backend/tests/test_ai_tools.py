@@ -133,8 +133,12 @@ class TestNotesAndQuestions:
 class TestNames:
     def test_nickname_variants(self):
         assert tools.name_variants("Петя") == ["Пётр"]
-        assert tools.name_variants(" саша ") == ["Александр", "Александра"]
-        assert tools.name_variants("Пётр") == []
+        assert tools.name_variants(" саша ")[:2] == ["Александр", "Александра"]
+        # В обе стороны и между уменьшительными: «Аня» найдёт контакт «Анюта»
+        assert tools.name_variants("Пётр") == ["Петя"]
+        assert "Анюта" in tools.name_variants("Аня")
+        assert "Аня" in tools.name_variants("анюта")
+        assert tools.name_variants("Зоя") == []
 
     async def test_capture_finds_contact_by_nickname_and_surname(self, db):
         from app.ai.capture import find_candidates

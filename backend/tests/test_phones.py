@@ -165,6 +165,31 @@ class TestAiSearchAndCard:
         assert result["contacts"] == [{"id": anna.id, "name": "Анюта"}]
 
 
+class TestAskByName:
+    async def test_ask_about_anya_finds_anyuta_with_her_number(self, db):
+        anna = await _contact(db, first_name="Анюта", phones=[{"value": "8 (921) 553-53-33"}])
+        seen: list[dict] = []
+
+        def respond(schema_name: str, system: str, user: str) -> dict:
+            if schema_name == "search_terms":
+                return {"names": ["Аня"], "keywords": []}
+            seen.extend(json.loads(user.split("<контакты>\n", 1)[1].split("\n</контакты>", 1)[0]))
+            return {"answer": "8 (921) 553-53-33", "contact_ids": [anna.id]}
+
+        result = await ask.run_ask(db, FakeLLM(respond), {"question": "какой номер у ани"})
+
+        assert [c["id"] for c in seen] == [anna.id]
+        assert seen[0]["phones"] == [{"value": "8 (921) 553-53-33", "label": "телефон"}]
+        assert result["contacts"] == [{"id": anna.id, "name": "Анюта"}]
+
+    async def test_fallback_list_shows_phones(self, db):
+        await _contact(db, first_name="Анюта", phones=[{"value": "8 (921) 553-53-33"}])
+
+        context = await ask.collect_context(db, ["кто-то, кого нет"])
+
+        assert context[0]["phones"] == ["8 (921) 553-53-33"]
+
+
 class TestBackfill:
     async def test_old_contacts_get_keys_once(self, db):
         now = datetime.now(timezone.utc)
