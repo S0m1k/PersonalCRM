@@ -79,6 +79,9 @@ RULES: tuple[Rule, ...] = (
     # Изменения событий календаря ходят в Outlook / Google
     _rule("calendar", "30/minute;300/hour", "user",
           lambda m, p: m not in READ_METHODS and p.startswith("/api/calendar/")),
+    # ИИ: каждый запрос — минуты работы видеокарты (применение предпросмотра — обычная запись)
+    _rule("ai", "6/minute;60/hour;200/day", "user",
+          lambda m, p: m == "POST" and p in ("/api/assistant/capture", "/api/assistant/ask")),
     # Всё остальное API
     _rule("write", "60/minute;1000/hour", "user", lambda m, p: m not in READ_METHODS and p.startswith("/api/")),
     _rule("read", "300/minute", "user", lambda m, p: p.startswith("/api/") and p != "/api/health"),

@@ -775,3 +775,87 @@ export function reconnectProvider(
     method: 'POST',
   });
 }
+
+// ---------------------------------------------------------------------------
+// ИИ-помощник: задачи в очереди (быстрый захват и «спроси»)
+// ---------------------------------------------------------------------------
+
+export type AssistantJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'applied';
+
+export interface ContactRef {
+  id: string;
+  name: string;
+  company?: string;
+  city?: string;
+}
+
+export type CaptureAction = { index: number; error?: string } & (
+  | { type: 'update_field'; key: string; label: string; old: string; new: string }
+  | { type: 'answer_question'; question_id: string; question: string; answer: string }
+  | { type: 'add_question'; text: string }
+  | { type: 'add_note'; text: string }
+);
+
+export interface CaptureResult {
+  text: string;
+  contact_id: string | null;
+  candidates: ContactRef[];
+  new_contact: { first_name: string; last_name: string } | null;
+  actions: CaptureAction[];
+}
+
+export interface AskResult {
+  question: string;
+  answer: string;
+  contacts: ContactRef[];
+}
+
+export interface AssistantJob<R = CaptureResult | AskResult> {
+  id: string;
+  kind: 'capture' | 'ask';
+  status: AssistantJobStatus;
+  position: number | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  result: R | null;
+  error: string | null;
+}
+
+export interface ApplyResult {
+  contact_id: string;
+  created_contact: ContactRef | null;
+  results: { index: number; ok: boolean; error?: string }[];
+}
+
+export interface AssistantInfo {
+  model: string;
+  fallback: string | null;
+  concurrency: number;
+  max_queued: number;
+}
+
+export const assistantInfoKey = '/api/assistant/info';
+
+export function assistantJobKey(id: string): string {
+  return `/api/assistant/jobs/${id}`;
+}
+
+export function startCapture(text: string): Promise<AssistantJob> {
+  return apiFetch<AssistantJob>('/api/assistant/capture', { method: 'POST', body: JSON.stringify({ text }) });
+}
+
+export function startAsk(question: string): Promise<AssistantJob> {
+  return apiFetch<AssistantJob>('/api/assistant/ask', { method: 'POST', body: JSON.stringify({ question }) });
+}
+
+export function cancelAssistantJob(id: string): Promise<AssistantJob> {
+  return apiFetch<AssistantJob>(assistantJobKey(id), { method: 'DELETE' });
+}
+
+export function applyCapture(id: string, actions: number[], contactId: string | null): Promise<ApplyResult> {
+  return apiFetch<ApplyResult>(`${assistantJobKey(id)}/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ actions, contact_id: contactId }),
+  });
+}

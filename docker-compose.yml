@@ -54,6 +54,21 @@ services:
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
 
+  # Очередь задач ИИ (arq): тот же образ backend, другая команда. Один экземпляр —
+  # AI_CONCURRENCY ограничивает одновременные запросы к модели. Модель — LLM_BASE_URL в backend/.env
+  ai-worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["arq", "app.ai.worker.WorkerSettings"]
+    depends_on:
+      - mongo
+      - redis
+    env_file:
+      - ./backend/.env
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379/0
+
   frontend:
     build:
       context: ./frontend

@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     # Потолок числа аккаунтов: открытая регистрация не должна забить сервер базами
     max_users: int = 50
 
-    # Redis: рейт-лимиты (и очередь задач позже). Пусто — лимиты хранятся в памяти процесса.
+    # Redis: рейт-лимиты и очередь задач ИИ. Пусто — лимиты хранятся в памяти процесса.
     redis_url: Optional[str] = None
     rate_limit_enabled: bool = True
     # Брать IP клиента из X-Real-IP (его ставит Caddy перед backend). Без прокси — false.
@@ -82,6 +82,26 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     attachment_max_mb: int = 25
     attachments_quota_mb: int = 500
+    # ИИ-помощник (Sprint 6): OpenAI-совместимый API, по умолчанию — локальный Qwen в Ollama
+    llm_base_url: str = "http://localhost:11434/v1"
+    llm_model: str = "qwen3.5:4b"
+    llm_api_key: Optional[str] = None  # Ollama ключ не проверяет
+    # Холодная загрузка модели в видеопамять — до минуты, поэтому таймаут с запасом
+    llm_timeout_s: float = 180
+    # Qwen 3.5 умеет «думать» — для разбора заметок это лишние секунды. Пусто — не передавать
+    llm_reasoning_effort: str = "none"
+    # Запасной провайдер, если локальная модель недоступна: "" (выключен) или "claude"
+    llm_fallback: str = ""
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: str = "claude-haiku-5-5"
+
+    # Очередь задач ИИ (arq поверх REDIS_URL)
+    ai_concurrency: int = 1           # одновременных запросов к модели (GPU 8 ГБ — одна-две)
+    ai_user_max_queued: int = 3       # задач одного пользователя в очереди и в работе
+    ai_job_timeout_s: int = 240
+    ai_job_max_tries: int = 2         # повтор только при недоступной модели
+    ai_result_ttl_s: int = 6 * 3600   # сколько хранится результат (предпросмотр)
+    ai_queue_expires_s: int = 15 * 60  # задача, не взятая в работу за это время, отменяется
 
     model_config = SettingsConfigDict(
         env_file=".env",

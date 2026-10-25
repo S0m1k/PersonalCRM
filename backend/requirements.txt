@@ -25,7 +25,10 @@ apscheduler==3.11.0
 
 # Рейт-лимиты: счётчики в Redis (redis-py asyncio), без Redis — в памяти
 limits==5.8.0
-redis==8.1.0
+redis==5.2.1   # arq и limits требуют redis<6 / <8
+
+# Очередь задач ИИ (Sprint 6): воркер — отдельный сервис ai-worker
+arq==0.28.0
 
 # Вложения: S3-совместимое хранилище (MinIO в docker compose). Вызовы — через asyncio.to_thread
 boto3==1.43.100
@@ -37,3 +40,4 @@ pytest==8.3.5
 pytest-asyncio==0.25.3
 mongomock-motor==0.0.34
 moto[s3]==5.2.2
+fakeredis==2.40.0   # очередь ИИ в тестах без настоящего Redis
