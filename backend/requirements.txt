@@ -27,6 +27,9 @@ apscheduler==3.11.0
 limits==5.8.0
 redis==8.1.0
 
+# Часовые пояса для zoneinfo (на Windows нет системной базы поясов)
+tzdata==2026.5
+
 # Тесты
 pytest==8.3.5
 pytest-asyncio==0.25.3

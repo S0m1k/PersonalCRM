@@ -6,7 +6,9 @@
   POST   /api/sync/connect/microsoft          — начать OAuth flow (возвращает authorize URL)
   GET    /api/sync/callback/microsoft         — OAuth callback (обменивает code на токены)
   DELETE /api/sync/connections/{id}           — удалить подключение
+  PATCH  /api/sync/connections/{id}           — что синхронизировать (контакты / календарь)
   POST   /api/sync/contacts/{connection_id}   — ручной trigger sync контактов
+  POST   /api/sync/calendar/{connection_id}   — ручной trigger sync календаря (Sprint 7)
   GET    /api/sync/log                        — история sync
 
 Все маршруты защищены JWT (get_current_user), кроме callback
@@ -32,11 +34,14 @@ from ..auth import get_current_user, get_user_db, tenant_db, webhook_client_stat
 from ..config import settings
 from ..db import get_db
 from ..models.contact import ContactCreate
-from ..models.sync import SyncConnectionOut, SyncLog, SyncStats, SyncError
+from ..models.sync import SyncConnectionOut, SyncConnectionUpdate, SyncLog, SyncStats, SyncError
 from ..models.user import User
 from ..repositories import contacts as contacts_repo
+from ..repositories import events as events_repo
 from ..repositories import sync as sync_repo
 from ..repositories import users as users_repo
+from ..sync.calendar import run_calendar_sync
+from ..sync.calendar_common import CalendarAccessError
 from ..sync.dedup import find_duplicates, merge_contacts
 from ..sync.microsoft import (
     create_contact_subscription,
@@ -54,6 +59,7 @@ from ..sync.google import (
     sync_google_contacts,
 )
 from ..sync.oauth import (
+    calendar_scope_granted,
     google_authorize_url,
     google_configured,
     google_exchange_code,
@@ -93,6 +99,54 @@ async def _db_for_state(
     return tenant_db(system_db, user.db_name) if user else None
 
 
+CALENDAR_CONSENT_MESSAGE = (
+    "Нет доступа к календарю. Переподключите аккаунт в «Синхронизации» и разрешите доступ к календарю."
+)
+
+
+async def _reconnect_target(db: AsyncIOMotorDatabase, connection_id: Optional[str], provider: str) -> Optional[str]:
+    """Проверить подключение, которое переподключают (новые права у того же аккаунта)."""
+    if not connection_id:
+        return None
+    conn = await sync_repo.get_connection(db, connection_id)
+    if conn is None or conn.provider != provider:
+        raise HTTPException(status_code=404, detail="Подключение не найдено")
+    return conn.id
+
+
+async def _save_oauth_connection(
+    db: AsyncIOMotorDatabase, provider: str, token_data: dict, state_doc: dict
+) -> None:
+    """
+    Сохранить токены после callback. Переподключение (в state есть connection_id) обновляет
+    существующее подключение — настройки и история остаются, добавляются права.
+    """
+    expires_in = token_data.get("expires_in", 3600)
+    scopes = token_data.get("scope") or None
+    fields = {
+        "access_token": token_data.get("access_token", ""),
+        "token_expires_at": datetime.now(timezone.utc) + timedelta(seconds=int(expires_in)),
+        "scopes": scopes,
+    }
+    has_calendar = calendar_scope_granted(provider, scopes)
+    existing_id = state_doc.get("connection_id")
+    if existing_id and await sync_repo.get_connection(db, existing_id) is not None:
+        if token_data.get("refresh_token"):
+            fields["refresh_token"] = token_data["refresh_token"]
+        if has_calendar:
+            fields["sync_calendar"] = True
+        await sync_repo.update_connection(db, existing_id, **fields, calendar_needs_consent=False)
+        return
+    await sync_repo.create_connection(
+        db,
+        provider=provider,
+        refresh_token=token_data.get("refresh_token"),
+        sync_contacts=True,
+        sync_calendar=has_calendar,
+        **fields,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Connections
 # ---------------------------------------------------------------------------
@@ -113,9 +167,14 @@ async def list_connections(db: DbDep, _user: AuthDep) -> list[SyncConnectionOut]
     "/connect/microsoft",
     summary="Начать OAuth flow с Microsoft",
 )
-async def connect_microsoft(db: DbDep, user: AuthDep):
+async def connect_microsoft(
+    db: DbDep,
+    user: AuthDep,
+    connection_id: Optional[str] = Query(default=None, description="Переподключить это подключение"),
+):
     """
     Возвращает URL для редиректа пользователя на Microsoft login.
+    С connection_id — переподключение (например, чтобы выдать доступ к календарю).
 
     Если MS_CLIENT_ID / MS_CLIENT_SECRET не заданы — возвращает 501
     с объяснением как зарегистрировать приложение в Azure AD.
@@ -130,8 +189,9 @@ async def connect_microsoft(db: DbDep, user: AuthDep):
             ),
         )
 
+    target = await _reconnect_target(db, connection_id, "microsoft")
     state = _new_state(user)
-    await sync_repo.save_oauth_state(db, state, "microsoft")
+    await sync_repo.save_oauth_state(db, state, "microsoft", connection_id=target)
     url = ms_authorize_url(state)
     return {"authorize_url": url, "state": state}
 
@@ -160,7 +220,8 @@ async def callback_microsoft(
         raise HTTPException(status_code=400, detail="Отсутствует authorization code")
 
     db = await _db_for_state(system_db, state)
-    if db is None or not await sync_repo.consume_oauth_state(db, state, "microsoft"):
+    state_doc = await sync_repo.consume_oauth_state_doc(db, state, "microsoft") if db is not None else None
+    if state_doc is None:
         logger.warning("Microsoft OAuth callback with invalid state")
         return _ui_redirect(error="invalid_state")
 
@@ -170,21 +231,7 @@ async def callback_microsoft(
         logger.error("ms_exchange_code failed: %s", exc)
         return _ui_redirect(error="token_exchange_failed")
 
-    access_token = token_data.get("access_token", "")
-    refresh_token = token_data.get("refresh_token")
-    expires_in = token_data.get("expires_in", 3600)
-    token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-
-    await sync_repo.create_connection(
-        db,
-        provider="microsoft",
-        access_token=access_token,
-        refresh_token=refresh_token,
-        token_expires_at=token_expires_at,
-        sync_contacts=True,
-        sync_calendar=False,
-    )
-
+    await _save_oauth_connection(db, "microsoft", token_data, state_doc)
     logger.info("Microsoft connection created via OAuth callback")
     return _ui_redirect(connected="microsoft")
 
@@ -193,7 +240,11 @@ async def callback_microsoft(
     "/connect/google",
     summary="Начать OAuth flow с Google",
 )
-async def connect_google(db: DbDep, user: AuthDep):
+async def connect_google(
+    db: DbDep,
+    user: AuthDep,
+    connection_id: Optional[str] = Query(default=None, description="Переподключить это подключение"),
+):
     """Вернуть URL для редиректа на Google login (или 501 если не настроено)."""
     if not google_configured():
         raise HTTPException(
@@ -204,8 +255,9 @@ async def connect_google(db: DbDep, user: AuthDep):
                 "Инструкция: https://console.cloud.google.com/apis/credentials"
             ),
         )
+    target = await _reconnect_target(db, connection_id, "google")
     state = _new_state(user)
-    await sync_repo.save_oauth_state(db, state, "google")
+    await sync_repo.save_oauth_state(db, state, "google", connection_id=target)
     return {"authorize_url": google_authorize_url(state), "state": state}
 
 
@@ -228,7 +280,8 @@ async def callback_google(
         raise HTTPException(status_code=400, detail="Отсутствует authorization code")
 
     db = await _db_for_state(system_db, state)
-    if db is None or not await sync_repo.consume_oauth_state(db, state, "google"):
+    state_doc = await sync_repo.consume_oauth_state_doc(db, state, "google") if db is not None else None
+    if state_doc is None:
         logger.warning("Google OAuth callback with invalid state")
         return _ui_redirect(error="invalid_state")
 
@@ -238,18 +291,7 @@ async def callback_google(
         logger.error("google_exchange_code failed: %s", exc)
         return _ui_redirect(error="token_exchange_failed")
 
-    expires_in = token_data.get("expires_in", 3600)
-    token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-
-    await sync_repo.create_connection(
-        db,
-        provider="google",
-        access_token=token_data.get("access_token", ""),
-        refresh_token=token_data.get("refresh_token"),
-        token_expires_at=token_expires_at,
-        sync_contacts=True,
-        sync_calendar=False,
-    )
+    await _save_oauth_connection(db, "google", token_data, state_doc)
     logger.info("Google connection created via OAuth callback")
     return _ui_redirect(connected="google")
 
@@ -265,13 +307,33 @@ async def delete_connection(
     db: DbDep,
     _user: AuthDep,
 ) -> None:
-    """Удалить sync-подключение. Токены удаляются из БД."""
+    """Удалить sync-подключение. Токены удаляются из БД, события его календаря — тоже."""
     deleted = await sync_repo.delete_connection(db, connection_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Подключение {connection_id!r} не найдено",
         )
+    await events_repo.delete_for_connection(db, connection_id)
+
+
+@router.patch(
+    "/connections/{connection_id}",
+    response_model=SyncConnectionOut,
+    summary="Что синхронизировать: контакты / календарь",
+)
+async def update_connection_settings(
+    connection_id: str, data: SyncConnectionUpdate, db: DbDep, _user: AuthDep
+) -> SyncConnectionOut:
+    changes = data.model_dump(exclude_none=True)
+    conn = (
+        await sync_repo.update_connection(db, connection_id, **changes)
+        if changes
+        else await sync_repo.get_connection(db, connection_id)
+    )
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Подключение не найдено")
+    return SyncConnectionOut.from_connection(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +414,43 @@ async def trigger_sync_contacts(
     )
 
     return log_entry
+
+
+@router.post(
+    "/calendar/{connection_id}",
+    response_model=SyncLog,
+    summary="Запустить синхронизацию календаря вручную",
+)
+async def trigger_sync_calendar(connection_id: str, db: DbDep, _user: AuthDep) -> SyncLog:
+    """
+    Подтянуть изменения календаря Outlook / Google. 403 — у подключения нет прав на календарь:
+    его нужно переподключить в «Синхронизации» (подключения до Sprint 7 их не запрашивали).
+    """
+    conn = await sync_repo.get_connection(db, connection_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Подключение не найдено")
+    if conn.provider not in ("microsoft", "google"):
+        raise HTTPException(status_code=400, detail=f"Провайдер {conn.provider!r} не поддерживается")
+    if not calendar_scope_granted(conn.provider, conn.scopes) or conn.calendar_needs_consent:
+        raise HTTPException(status_code=403, detail=CALENDAR_CONSENT_MESSAGE)
+
+    log_entry = await sync_repo.create_log(
+        db,
+        connection_id=connection_id,
+        type="calendar",
+        action="delta_sync" if conn.calendar_sync_state else "full_sync",
+    )
+    stats, errors = SyncStats(), []
+    try:
+        await run_calendar_sync(db, conn, stats, errors)
+    except CalendarAccessError:
+        await sync_repo.update_log(db, log_entry.id, stats=stats, errors=[SyncError(error="Нет доступа к календарю")])
+        raise HTTPException(status_code=403, detail=CALENDAR_CONSENT_MESSAGE)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Calendar sync failed for connection %s: %s", connection_id, exc)
+        stats.errors += 1
+        errors.append(SyncError(error=str(exc)))
+    return await sync_repo.update_log(db, log_entry.id, stats=stats, errors=errors)
 
 
 async def _upsert_mapped_contact(

@@ -70,6 +70,9 @@ RULES: tuple[Rule, ...] = (
     # Тяжёлые операции: разбор файлов и походы во внешние API
     _rule("import", "20/hour", "user", lambda m, p: m == "POST" and p.startswith("/api/import/")),
     _rule("sync", "30/minute;300/hour", "user", lambda m, p: m == "POST" and p.startswith("/api/sync/")),
+    # Изменения событий календаря ходят в Outlook / Google
+    _rule("calendar", "30/minute;300/hour", "user",
+          lambda m, p: m not in READ_METHODS and p.startswith("/api/calendar/")),
     # Всё остальное API
     _rule("write", "60/minute;1000/hour", "user", lambda m, p: m not in READ_METHODS and p.startswith("/api/")),
     _rule("read", "300/minute", "user", lambda m, p: p.startswith("/api/") and p != "/api/health"),

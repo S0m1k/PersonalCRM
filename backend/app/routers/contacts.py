@@ -14,6 +14,7 @@ from ..auth import get_current_user, get_user_db
 from ..models.user import User
 from ..models.contact import ContactCreate, ContactOut, ContactUpdate
 from ..repositories import contacts as repo
+from ..repositories import events as events_repo
 from ..repositories import questions as questions_repo
 from ..repositories import templates as templates_repo
 from ..services.fields import FieldValidationError, validate_field_values
@@ -160,3 +161,4 @@ async def delete_contact(
             detail=f"Контакт {contact_id!r} не найден",
         )
     await questions_repo.delete_for_contact(db, contact_id)
+    await events_repo.unlink_contact(db, contact_id)
