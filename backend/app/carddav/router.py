@@ -8,7 +8,8 @@
   /dav/addressbooks/contacts/    — единственная книга «PersonalCRM» = все контакты CRM
   /dav/addressbooks/contacts/<name>.vcf — карточка
 
-Вход — HTTP Basic: ADMIN_USERNAME + CARDDAV_PASSWORD (отдельный пароль, его хранит телефон).
+Вход — HTTP Basic: email пользователя + пароль для телефона (выпускается в настройках
+аккаунта, POST /api/auth/carddav-password). Каждый видит только контакты своей базы.
 """
 
 from __future__ import annotations
@@ -22,9 +23,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from ..auth import get_current_user
-from ..config import settings
+from ..auth import carddav_digest, get_current_user, tenant_db
 from ..db import get_db
+from ..models.user import User
+from ..repositories import users as users_repo
 from . import store
 from .xml import (
     CARD,
@@ -50,7 +52,6 @@ BOOK = "/dav/addressbooks/contacts/"
 METHODS = ["OPTIONS", "PROPFIND", "REPORT", "GET", "HEAD", "PUT", "DELETE"]
 
 router = APIRouter(tags=["carddav"], include_in_schema=False)
-DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
 
 
 # ---------------------------------------------------------------------------
@@ -58,27 +59,35 @@ DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
 # ---------------------------------------------------------------------------
 
 
-def _check_auth(request: Request) -> None:
-    if not settings.carddav_password:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+def _unauthorized() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        headers={"WWW-Authenticate": 'Basic realm="PersonalCRM", charset="UTF-8"'},
+    )
+
+
+async def _check_auth(
+    request: Request, system_db: Annotated[AsyncIOMotorDatabase, Depends(get_db)]
+) -> AsyncIOMotorDatabase:
+    """HTTP Basic (email + пароль для телефона) → база этого пользователя."""
     scheme, _, encoded = request.headers.get("Authorization", "").partition(" ")
     try:
-        user, _, password = base64.b64decode(encoded).decode().partition(":")
+        login, _, password = base64.b64decode(encoded).decode().partition(":")
     except (binascii.Error, UnicodeDecodeError):
-        user, password = "", ""
-    is_valid = (
-        scheme.lower() == "basic"
-        and secrets.compare_digest(user.encode(), settings.admin_username.encode())
-        and secrets.compare_digest(password.encode(), settings.carddav_password.encode())
-    )
-    if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            headers={"WWW-Authenticate": 'Basic realm="PersonalCRM", charset="UTF-8"'},
-        )
+        login, password = "", ""
+    if scheme.lower() != "basic" or not login or not password:
+        raise _unauthorized()
+    doc = await users_repo.get_auth_doc(system_db, login)
+    secret = (doc or {}).get("carddav_secret") or ""
+    # compare_digest и для несуществующего пользователя — одинаковое время ответа
+    is_valid = secrets.compare_digest(carddav_digest(password), secret or "0" * 64)
+    if doc is None or not secret or not is_valid:
+        raise _unauthorized()
+    return tenant_db(system_db, doc["db_name"])
 
 
-AuthDep = Annotated[None, Depends(_check_auth)]
+# База пользователя, вошедшего по Basic-auth
+DavDbDep = Annotated[AsyncIOMotorDatabase, Depends(_check_auth)]
 
 
 # ---------------------------------------------------------------------------
@@ -146,8 +155,8 @@ def _segments(path: str) -> list[str]:
 
 
 @router.get("/api/carddav/status", include_in_schema=True, summary="Как подключить телефон (без пароля)")
-async def carddav_status(_user: Annotated[str, Depends(get_current_user)]) -> dict:
-    return {"enabled": bool(settings.carddav_password), "username": settings.admin_username, "path": ROOT}
+async def carddav_status(user: Annotated[User, Depends(get_current_user)]) -> dict:
+    return {"enabled": user.has_carddav_password, "username": user.email, "path": ROOT}
 
 
 @router.api_route("/.well-known/carddav", methods=METHODS)
@@ -161,7 +170,7 @@ async def dav_no_slash() -> RedirectResponse:
 
 
 @router.api_route("/dav/{path:path}", methods=METHODS)
-async def dav(path: str, request: Request, db: DbDep, _auth: AuthDep) -> Response:
+async def dav(path: str, request: Request, db: DavDbDep) -> Response:
     parts = _segments(path)
     method = request.method
 

@@ -2,7 +2,8 @@
 CardDAV: контакты CRM как адресная книга iPhone / Android (DAVx⁵).
 
 Проверяем ровно тот диалог, который ведут клиенты: discovery → список с ETag →
-multiget → GET / PUT / DELETE.
+multiget → GET / PUT / DELETE. Вход — email пользователя + пароль для телефона,
+выпущенный через /api/auth/carddav-password.
 """
 
 from __future__ import annotations
@@ -14,18 +15,20 @@ import pytest
 from fastapi.testclient import TestClient
 from mongomock_motor import AsyncMongoMockClient
 
-from app.config import settings
 from app.db import get_db
 from app.main import app
 
 NS = {"d": "DAV:", "card": "urn:ietf:params:xml:ns:carddav", "cs": "http://calendarserver.org/ns/"}
 BOOK = "/dav/addressbooks/contacts/"
-PASSWORD = "dav-secret"
+
+
+def _basic(login: str, password: str) -> dict:
+    token = base64.b64encode(f"{login}:{password}".encode()).decode()
+    return {"Authorization": f"Basic {token}"}
 
 
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setattr(settings, "carddav_password", PASSWORD)
+def client():
     db = AsyncMongoMockClient()["test_carddav"]
     app.dependency_overrides[get_db] = lambda: db
     with TestClient(app) as c:
@@ -34,15 +37,22 @@ def client(monkeypatch):
 
 
 @pytest.fixture
-def dav() -> dict:
-    token = base64.b64encode(f"admin:{PASSWORD}".encode()).decode()
-    return {"Authorization": f"Basic {token}"}
+def jwt(client) -> dict:
+    resp = client.post("/api/auth/login", data={"username": "admin", "password": "admin-test-pass"})
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
 @pytest.fixture
-def jwt(client) -> dict:
-    resp = client.post("/api/auth/login", data={"username": "admin", "password": "admin"})
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+def dav_password(client, jwt) -> str:
+    resp = client.post("/api/auth/carddav-password", headers=jwt)
+    assert resp.status_code == 200
+    assert resp.json()["username"] == "admin"
+    return resp.json()["password"]
+
+
+@pytest.fixture
+def dav(dav_password) -> dict:
+    return _basic("admin", dav_password)
 
 
 def _propfind(client, path, headers, depth="0", body=None):
@@ -69,10 +79,15 @@ VCARD_FROM_PHONE = (
 
 
 class TestAccess:
-    def test_disabled_without_password(self, client, dav, monkeypatch):
-        monkeypatch.setattr(settings, "carddav_password", None)
+    def test_revoked_password_stops_working(self, client, jwt, dav):
+        assert client.delete("/api/auth/carddav-password", headers=jwt).status_code == 204
 
-        assert _propfind(client, BOOK, dav).status_code == 404
+        assert _propfind(client, BOOK, dav).status_code == 401
+
+    def test_new_password_replaces_old(self, client, jwt, dav):
+        client.post("/api/auth/carddav-password", headers=jwt)
+
+        assert _propfind(client, BOOK, dav).status_code == 401
 
     def test_requires_basic_auth(self, client):
         resp = _propfind(client, BOOK, {})
@@ -242,16 +257,14 @@ class TestReadWrite:
 
 
 class TestStatusForUi:
-    def test_status_shows_how_to_connect_without_password(self, client, jwt):
+    def test_status_shows_how_to_connect_without_password(self, client, jwt, dav_password):
         resp = client.get("/api/carddav/status", headers=jwt)
 
         assert resp.status_code == 200
         assert resp.json() == {"enabled": True, "username": "admin", "path": "/dav/"}
-        assert PASSWORD not in resp.text
+        assert dav_password not in resp.text
 
-    def test_status_when_disabled(self, client, jwt, monkeypatch):
-        monkeypatch.setattr(settings, "carddav_password", None)
-
+    def test_status_when_no_password_issued(self, client, jwt):
         assert client.get("/api/carddav/status", headers=jwt).json()["enabled"] is False
 
     def test_status_requires_login(self, client):

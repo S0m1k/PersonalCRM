@@ -1,12 +1,15 @@
 """
-Резервная копия и восстановление базы MongoDB из docker-compose.
+Резервная копия и восстановление баз MongoDB из docker-compose.
+
+В копию попадают системная база personalcrm (пользователи и данные первого
+пользователя) и базы всех пользователей personalcrm_u_<id>.
 
     python scripts/backup.py                         # копия в ./backups, хранить 14 последних
     python scripts/backup.py --dir D:/OneDrive/crm   # копия в другую папку (лучше — вне этого диска)
     python scripts/backup.py --keep 30
     python scripts/backup.py --restore backups/personalcrm-20261021-0300.archive.gz
 
-Восстановление ПОЛНОСТЬЮ заменяет текущую базу содержимым копии.
+Восстановление ПОЛНОСТЬЮ заменяет текущие базы CRM содержимым копии.
 Нужен запущенный `docker compose up` (сервис mongo). Только стандартная библиотека Python.
 """
 
@@ -22,6 +25,13 @@ ROOT = Path(__file__).resolve().parent.parent
 DB_NAME = "personalcrm"
 PREFIX = f"{DB_NAME}-"
 SUFFIX = ".archive.gz"
+# Базы пользователей: personalcrm_u_<id> (см. backend/app/repositories/users.py)
+NS_INCLUDE = [f"--nsInclude={DB_NAME}.*", f"--nsInclude={DB_NAME}_u_*.*"]
+DROP_CRM_DATABASES = (
+    "db.adminCommand({listDatabases: 1}).databases"
+    f".filter(d => d.name === '{DB_NAME}' || d.name.startsWith('{DB_NAME}_u_'))"
+    ".forEach(d => db.getSiblingDB(d.name).dropDatabase())"
+)
 
 
 def _compose_exec(*args: str) -> list[str]:
@@ -29,12 +39,14 @@ def _compose_exec(*args: str) -> list[str]:
 
 
 def make_backup(target_dir: Path, keep: int) -> Path:
-    """Снять дамп базы в файл и удалить старые копии сверх `keep`."""
+    """Снять дамп всех баз CRM в файл и удалить старые копии сверх `keep`."""
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{PREFIX}{datetime.now():%Y%m%d-%H%M%S}{SUFFIX}"
     with path.open("wb") as out:
         result = subprocess.run(
-            _compose_exec("mongodump", "--archive", "--gzip", f"--db={DB_NAME}"),
+            # Без --db mongodump снимает все базы сервера (на нём только CRM),
+            # лишнее отсекается при восстановлении через --nsInclude
+            _compose_exec("mongodump", "--archive", "--gzip"),
             cwd=ROOT, stdout=out, stderr=subprocess.PIPE,
         )
     if result.returncode != 0 or path.stat().st_size == 0:
@@ -54,19 +66,19 @@ def prune(target_dir: Path, keep: int) -> list[Path]:
 
 
 def restore(archive: Path) -> None:
-    """Заменить базу содержимым архива целиком (коллекции, которых нет в копии, тоже удаляются)."""
+    """Заменить базы CRM содержимым архива целиком (базы и коллекции, которых нет в копии, удаляются)."""
     if not archive.is_file():
         raise FileNotFoundError(archive)
     # mongorestore --drop пересоздаёт только коллекции из архива — более новые остались бы
     dropped = subprocess.run(
-        _compose_exec("mongosh", DB_NAME, "--quiet", "--eval", "db.dropDatabase()"),
+        _compose_exec("mongosh", DB_NAME, "--quiet", "--eval", DROP_CRM_DATABASES),
         cwd=ROOT, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL,
     )
     if dropped.returncode != 0:
         raise RuntimeError(f"Не удалось очистить базу перед восстановлением:\n{dropped.stderr.decode(errors='replace')}")
     with archive.open("rb") as src:
         result = subprocess.run(
-            _compose_exec("mongorestore", "--archive", "--gzip", "--drop", f"--nsInclude={DB_NAME}.*"),
+            _compose_exec("mongorestore", "--archive", "--gzip", "--drop", *NS_INCLUDE),
             cwd=ROOT, stdin=src, stderr=subprocess.PIPE,
         )
     if result.returncode != 0:

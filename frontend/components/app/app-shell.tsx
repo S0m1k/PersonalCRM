@@ -11,6 +11,15 @@ import { CommandPalette } from './command-palette';
 import { NewContactDialog } from './new-contact-dialog';
 import { Sidebar } from './sidebar';
 
+// Свой кеш на каждое монтирование оболочки: после выхода и входа другим пользователем
+// на экране не мелькнут данные предыдущего (provider вызывается один раз при монтировании)
+const SWR_OPTIONS = {
+  fetcher,
+  revalidateOnFocus: true,
+  dedupingInterval: 1500,
+  provider: () => new Map(),
+};
+
 type AppActions = {
   openSearch: () => void;
   newContact: (name?: string) => void;
@@ -60,7 +69,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!isReady) return null;
 
   return (
-    <SWRConfig value={{ fetcher, revalidateOnFocus: true, dedupingInterval: 1500 }}>
+    <SWRConfig value={SWR_OPTIONS}>
       <TooltipProvider>
         <AppActionsContext.Provider value={actions}>
           <div className="flex h-dvh flex-col overflow-hidden md:flex-row">

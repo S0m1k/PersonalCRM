@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from mongomock_motor import AsyncMongoMockClient
 
 from app.main import app
+from app.auth import webhook_client_state
 from app.db import get_db
 
 
@@ -36,7 +37,7 @@ def client():
 
 
 def get_token(client: TestClient) -> str:
-    resp = client.post("/api/auth/login", data={"username": "admin", "password": "admin"})
+    resp = client.post("/api/auth/login", data={"username": "admin", "password": "admin-test-pass"})
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]
 
@@ -353,10 +354,11 @@ class TestWebhooks:
         conns = client.get("/api/sync/connections", headers=auth).json()
         conn_id = [c for c in conns if c["provider"] == "microsoft"][-1]["id"]
 
-        # Уведомление с clientState = connection_id
+        # Уведомление с подписанным clientState, как его создаёт subscribe_webhook
+        user_id = client.get("/api/auth/me", headers=auth).json()["id"]
         resp = client.post(
             "/api/webhooks/microsoft",
-            json={"value": [{"clientState": conn_id, "subscriptionId": "sub1"}]},
+            json={"value": [{"clientState": webhook_client_state(user_id, conn_id), "subscriptionId": "sub1"}]},
         )
         assert resp.status_code == 202
 
@@ -367,6 +369,22 @@ class TestWebhooks:
         # Запись в логе с action=webhook
         logs = client.get("/api/sync/log", headers=auth).json()
         assert any(l["action"] == "webhook" for l in logs)
+
+    def test_unsigned_or_forged_client_state_is_ignored(self, client, auth):
+        user_id = client.get("/api/auth/me", headers=auth).json()["id"]
+        conns = client.get("/api/sync/connections", headers=auth).json()
+        conn_id = [c for c in conns if c["provider"] == "microsoft"][-1]["id"]
+        before = len(client.get("/api/sync/log", headers=auth).json())
+
+        for state in (conn_id, f"{user_id}:{conn_id}", f"{user_id}:{conn_id}:{'0' * 32}"):
+            resp = client.post("/api/webhooks/microsoft", json={"value": [{"clientState": state}]})
+            assert resp.status_code == 202
+
+        assert len(client.get("/api/sync/log", headers=auth).json()) == before
+
+    @pytest.mark.parametrize("body", [[], {"value": "x"}, {"value": [1, None]}, "text"])
+    def test_malformed_body_is_202(self, client, body):
+        assert client.post("/api/webhooks/microsoft", json=body).status_code == 202
 
     def test_notification_unknown_state_is_202(self, client):
         resp = client.post(

@@ -10,15 +10,15 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from ..auth import get_current_user
-from ..db import get_db
+from ..auth import get_current_user, get_user_db
+from ..models.user import User
 from ..repositories import questions as questions_repo
 from ..services.birthdays import upcoming_birthdays
 
 router = APIRouter(prefix="/api/home", tags=["home"])
 
-DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
-AuthDep = Annotated[str, Depends(get_current_user)]
+DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_user_db)]
+AuthDep = Annotated[User, Depends(get_current_user)]
 
 CONTACTS = "contacts"
 BIRTHDAY_WINDOW_DAYS = 14

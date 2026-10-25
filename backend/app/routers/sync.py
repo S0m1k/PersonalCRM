@@ -11,7 +11,9 @@
 
 Все маршруты защищены JWT (get_current_user), кроме callback
 (callback редиректит браузер — токен в query state не передаётся,
- поэтому защищаем его через state-параметр, а не JWT).
+ поэтому защищаем его через state-параметр, а не JWT). State имеет вид
+ «<id пользователя>.<uuid>»: по нему callback находит базу пользователя,
+ а сам state хранится в этой базе и одноразовый.
 """
 
 from __future__ import annotations
@@ -26,13 +28,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from ..auth import get_current_user
+from ..auth import get_current_user, get_user_db, tenant_db, webhook_client_state
 from ..config import settings
 from ..db import get_db
 from ..models.contact import ContactCreate
 from ..models.sync import SyncConnectionOut, SyncLog, SyncStats, SyncError
+from ..models.user import User
 from ..repositories import contacts as contacts_repo
 from ..repositories import sync as sync_repo
+from ..repositories import users as users_repo
 from ..sync.dedup import find_duplicates, merge_contacts
 from ..sync.microsoft import (
     create_contact_subscription,
@@ -62,14 +66,31 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 
-DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
-AuthDep = Annotated[str, Depends(get_current_user)]
+DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_user_db)]
+# Системная база — только для callback'ов без JWT (пользователя находим по state)
+SystemDbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
+AuthDep = Annotated[User, Depends(get_current_user)]
 
 
 def _ui_redirect(**params: str) -> RedirectResponse:
     """Вернуть браузер на страницу /sync фронтенда с параметрами результата."""
     url = f"{settings.frontend_url.rstrip('/')}/sync?{urlencode(params)}"
     return RedirectResponse(url=url, status_code=302)
+
+
+def _new_state(user: User) -> str:
+    return f"{user.id}.{uuid.uuid4()}"
+
+
+async def _db_for_state(
+    system_db: AsyncIOMotorDatabase, state: Optional[str]
+) -> Optional[AsyncIOMotorDatabase]:
+    """База пользователя, которому выдан state. Сам state проверяет consume_oauth_state."""
+    user_id, sep, _ = (state or "").partition(".")
+    if not sep:
+        return None
+    user = await users_repo.get_user(system_db, user_id)
+    return tenant_db(system_db, user.db_name) if user else None
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +113,7 @@ async def list_connections(db: DbDep, _user: AuthDep) -> list[SyncConnectionOut]
     "/connect/microsoft",
     summary="Начать OAuth flow с Microsoft",
 )
-async def connect_microsoft(db: DbDep, _user: AuthDep):
+async def connect_microsoft(db: DbDep, user: AuthDep):
     """
     Возвращает URL для редиректа пользователя на Microsoft login.
 
@@ -109,7 +130,7 @@ async def connect_microsoft(db: DbDep, _user: AuthDep):
             ),
         )
 
-    state = str(uuid.uuid4())
+    state = _new_state(user)
     await sync_repo.save_oauth_state(db, state, "microsoft")
     url = ms_authorize_url(state)
     return {"authorize_url": url, "state": state}
@@ -121,7 +142,7 @@ async def connect_microsoft(db: DbDep, _user: AuthDep):
     include_in_schema=False,  # скрываем из Swagger — вызывается браузером
 )
 async def callback_microsoft(
-    db: DbDep,
+    system_db: SystemDbDep,
     code: Optional[str] = Query(default=None),
     error: Optional[str] = Query(default=None),
     error_description: Optional[str] = Query(default=None),
@@ -138,7 +159,8 @@ async def callback_microsoft(
     if not code:
         raise HTTPException(status_code=400, detail="Отсутствует authorization code")
 
-    if not await sync_repo.consume_oauth_state(db, state, "microsoft"):
+    db = await _db_for_state(system_db, state)
+    if db is None or not await sync_repo.consume_oauth_state(db, state, "microsoft"):
         logger.warning("Microsoft OAuth callback with invalid state")
         return _ui_redirect(error="invalid_state")
 
@@ -171,7 +193,7 @@ async def callback_microsoft(
     "/connect/google",
     summary="Начать OAuth flow с Google",
 )
-async def connect_google(db: DbDep, _user: AuthDep):
+async def connect_google(db: DbDep, user: AuthDep):
     """Вернуть URL для редиректа на Google login (или 501 если не настроено)."""
     if not google_configured():
         raise HTTPException(
@@ -182,7 +204,7 @@ async def connect_google(db: DbDep, _user: AuthDep):
                 "Инструкция: https://console.cloud.google.com/apis/credentials"
             ),
         )
-    state = str(uuid.uuid4())
+    state = _new_state(user)
     await sync_repo.save_oauth_state(db, state, "google")
     return {"authorize_url": google_authorize_url(state), "state": state}
 
@@ -193,7 +215,7 @@ async def connect_google(db: DbDep, _user: AuthDep):
     include_in_schema=False,
 )
 async def callback_google(
-    db: DbDep,
+    system_db: SystemDbDep,
     code: Optional[str] = Query(default=None),
     error: Optional[str] = Query(default=None),
     state: Optional[str] = Query(default=None),
@@ -205,7 +227,8 @@ async def callback_google(
     if not code:
         raise HTTPException(status_code=400, detail="Отсутствует authorization code")
 
-    if not await sync_repo.consume_oauth_state(db, state, "google"):
+    db = await _db_for_state(system_db, state)
+    if db is None or not await sync_repo.consume_oauth_state(db, state, "google"):
         logger.warning("Google OAuth callback with invalid state")
         return _ui_redirect(error="invalid_state")
 
@@ -506,7 +529,7 @@ async def push_contact(
     "/connections/{connection_id}/subscribe",
     summary="Подписаться на изменения контактов (Microsoft webhook)",
 )
-async def subscribe_webhook(connection_id: str, db: DbDep, _user: AuthDep):
+async def subscribe_webhook(connection_id: str, db: DbDep, user: AuthDep):
     """
     Создать Graph-подписку на изменения контактов.
 
@@ -532,7 +555,8 @@ async def subscribe_webhook(connection_id: str, db: DbDep, _user: AuthDep):
     access_token, _ = sync_repo.get_decrypted_tokens(conn)
     try:
         sub = await create_contact_subscription(
-            access_token, notification_url, client_state=connection_id
+            # Вебхук приходит без JWT: по подписанному clientState находим пользователя и подключение
+            access_token, notification_url, client_state=webhook_client_state(user.id, connection_id)
         )
     except Exception as exc:
         logger.error("create subscription failed: %s", exc)

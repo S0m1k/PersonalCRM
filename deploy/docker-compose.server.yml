@@ -1,0 +1,50 @@
+# Сервер (ВМ): поверх docker-compose.yml.
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.server.yml up -d --build
+#
+# Вход — только через edge (Caddy) на :8081: интерфейс и API на одном адресе.
+# Публичный HTTPS — Tailscale Funnel (контейнер tailscale), см. deploy/README.md.
+# В backend/.env на сервере: FRONTEND_URL и PUBLIC_BASE_URL = публичный адрес.
+services:
+  mongo:
+    restart: always
+  redis:
+    restart: always
+  backend:
+    restart: always
+    environment:
+      # IP клиента — из X-Real-IP, который выставляет edge (deploy/Caddyfile)
+      TRUST_PROXY_HEADERS: "true"
+    ports: !override
+      - "127.0.0.1:8000:8000"
+  frontend:
+    restart: always
+    build:
+      args:
+        # Пусто — запросы к API идут на тот же адрес, что и страница (через edge)
+        NEXT_PUBLIC_API_URL: ""
+    ports: !override
+      - "127.0.0.1:3300:3000"
+  edge:
+    image: caddy:2.10-alpine
+    restart: always
+    ports:
+      # Домашняя сеть: http://<IP-сервера>:8081
+      - "0.0.0.0:8081:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - backend
+      - frontend
+  tailscale:
+    image: tailscale/tailscale:v1.104.2
+    restart: always
+    network_mode: host
+    # Без containerboot: без authkey он падает через 60 с и каждый раз выдаёт новую ссылку входа.
+    entrypoint: ["tailscaled", "--tun=userspace-networking", "--statedir=/var/lib/tailscale", "--socket=/tmp/tailscaled.sock"]
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+    depends_on:
+      - edge
+
+volumes:
+  tailscale_state:

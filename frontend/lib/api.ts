@@ -5,7 +5,7 @@
  * выбрасывает ошибку при HTTP-ошибках, типизирует ответы.
  */
 
-const API_URL =
+export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 // ---------------------------------------------------------------------------
@@ -212,6 +212,11 @@ async function errorMessage(resp: Response): Promise<string> {
   return text || resp.statusText;
 }
 
+/** Страницы без входа: с них не уводим на /login при 401. */
+const AUTH_PAGES = ['/login', '/register'];
+
+const TOO_MANY_REQUESTS = 429;
+
 /** Fetcher для SWR: ключ — путь API. */
 export function fetcher<T>(path: string): Promise<T> {
   return apiFetch<T>(path);
@@ -237,7 +242,8 @@ async function apiFetch<T>(
 
   if (resp.status === 401) {
     clearToken();
-    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    const path = typeof window !== 'undefined' ? window.location.pathname : '/login';
+    if (!AUTH_PAGES.some((page) => path.startsWith(page))) {
       window.location.href = '/login';
     }
     throw new ApiError(401, 'Не авторизован');
@@ -259,16 +265,64 @@ async function apiFetch<T>(
 // Auth
 // ---------------------------------------------------------------------------
 
-export async function login(username: string, password: string): Promise<TokenResponse> {
+export interface Me {
+  id: string;
+  email: string;
+  name: string;
+  username: string;
+  has_carddav_password: boolean;
+}
+
+export interface CarddavPassword {
+  username: string;
+  password: string;
+}
+
+export async function login(email: string, password: string): Promise<TokenResponse> {
   const resp = await fetch(`${API_URL}/api/auth/login/json`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username: email, password }),
   });
+  if (resp.status === TOO_MANY_REQUESTS) {
+    throw new ApiError(resp.status, 'Слишком много попыток входа. Подождите минуту.');
+  }
   if (!resp.ok) {
-    throw new ApiError(resp.status, 'Неверный логин или пароль');
+    throw new ApiError(resp.status, 'Неверный email или пароль');
   }
   return resp.json() as Promise<TokenResponse>;
+}
+
+export async function register(email: string, password: string, name: string): Promise<TokenResponse> {
+  const resp = await fetch(`${API_URL}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, name }),
+  });
+  if (!resp.ok) {
+    throw new ApiError(resp.status, await errorMessage(resp));
+  }
+  return resp.json() as Promise<TokenResponse>;
+}
+
+export const meKey = '/api/auth/me';
+
+/** Сменить пароль. Остальные сессии завершаются — сохраняем новый токен этой вкладки. */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const resp = await apiFetch<TokenResponse>('/api/auth/password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  saveToken(resp.access_token);
+}
+
+/** Новый пароль для телефона: старый перестаёт работать, новый виден только сейчас. */
+export async function issueCarddavPassword(): Promise<CarddavPassword> {
+  return apiFetch<CarddavPassword>('/api/auth/carddav-password', { method: 'POST' });
+}
+
+export async function revokeCarddavPassword(): Promise<void> {
+  return apiFetch<void>('/api/auth/carddav-password', { method: 'DELETE' });
 }
 
 // ---------------------------------------------------------------------------

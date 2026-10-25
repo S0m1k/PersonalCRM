@@ -10,9 +10,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth import ensure_legacy_admin
 from .carddav import router as carddav_router
-from .config import settings
+from .config import check_secrets, settings
 from .db import close_db, connect_db, get_db
+from .ratelimit import RateLimitMiddleware
+from .repositories import users as users_repo
 
 logger = logging.getLogger(__name__)
 from .routers import auth as auth_router
@@ -27,8 +30,14 @@ from .routers import webhooks as webhooks_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle-хук: MongoDB + фоновый планировщик."""
+    """Lifecycle-хук: MongoDB, пользователи, фоновый планировщик."""
+    check_secrets(settings)
     await connect_db()
+    try:
+        await users_repo.ensure_indexes(get_db())
+        await ensure_legacy_admin(get_db())
+    except Exception as exc:  # noqa: BLE001 — без БД приложение всё равно стартует
+        logger.warning("Не удалось подготовить коллекцию users: %s", exc)
 
     # Планировщик отключается в тестах (ENABLE_SCHEDULER=false), чтобы не
     # запускать фоновые задачи под TestClient.
@@ -60,6 +69,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Рейт-лимиты на все запросы (добавлен раньше CORS — значит, CORS снаружи и 429 тоже с CORS-заголовками)
+app.add_middleware(RateLimitMiddleware)
+
 # CORS: разрешаем только наш фронтенд (FRONTEND_URL)
 app.add_middleware(
     CORSMiddleware,
@@ -73,7 +85,7 @@ app.add_middleware(
 # Роутеры
 # ---------------------------------------------------------------------------
 
-# Auth: /api/auth/login, /api/auth/me — публичный login, me требует токена
+# Auth: /api/auth/* — регистрация и вход публичные, остальное требует токена
 app.include_router(auth_router.router)
 
 # Contacts: /api/contacts/* — требуют токена
@@ -93,7 +105,7 @@ app.include_router(import_router.router)
 # Webhooks: /api/webhooks/* — публичные эндпоинты для уведомлений Microsoft (Sprint 3)
 app.include_router(webhooks_router.router)
 
-# CardDAV: /dav/* — контакты в iPhone / Android (Basic-auth, CARDDAV_PASSWORD)
+# CardDAV: /dav/* — контакты в iPhone / Android (Basic-auth: email + пароль для телефона)
 app.include_router(carddav_router.router)
 
 

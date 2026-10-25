@@ -23,6 +23,10 @@ cryptography==44.0.2
 # Фоновый планировщик (Sprint 3)
 apscheduler==3.11.0
 
+# Рейт-лимиты: счётчики в Redis (redis-py asyncio), без Redis — в памяти
+limits==5.8.0
+redis==8.1.0
+
 # Тесты
 pytest==8.3.5
 pytest-asyncio==0.25.3

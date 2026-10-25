@@ -6,21 +6,25 @@ from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+INSECURE_SECRET_KEY = "change-me-in-production"
+SECRET_KEY_MIN_LENGTH = 32
+
 
 class Settings(BaseSettings):
     # MongoDB
     mongodb_uri: str = "mongodb://localhost:27017"
     db_name: str = "personalcrm"
 
-    # Безопасность — JWT
-    secret_key: str = "change-me-in-production"
+    # Безопасность — JWT. Обязателен: со значением по умолчанию backend не стартует (см. check_secrets)
+    secret_key: str = INSECURE_SECRET_KEY
     jwt_expire_minutes: int = 60 * 24  # 24 часа
 
-    # Single-user аутентификация
+    # Первый пользователь из однопользовательской версии (см. auth.ensure_legacy_admin).
+    # Создаётся, только если задан ADMIN_PASSWORD_HASH или ADMIN_PASSWORD не короче 8 символов.
     admin_username: str = "admin"
     # Для локальной разработки: задайте ADMIN_PASSWORD в .env
     # Для продакшна: задайте ADMIN_PASSWORD_HASH (bcrypt) и не храните plaintext
-    admin_password: str = "admin"
+    admin_password: Optional[str] = None
     admin_password_hash: Optional[str] = None  # bcrypt-хеш; если задан — используется вместо admin_password
 
     # Шифрование токенов OAuth (Sprint 2)
@@ -55,11 +59,35 @@ class Settings(BaseSettings):
     # Отдельный пароль — его хранит телефон. Не задан — CardDAV выключен (404).
     carddav_password: Optional[str] = None
 
+    # Пользователи. Открытая регистрация: любой может создать аккаунт (данные — в своей базе).
+    registration_open: bool = True
+    # Потолок числа аккаунтов: открытая регистрация не должна забить сервер базами
+    max_users: int = 50
+
+    # Redis: рейт-лимиты (и очередь задач позже). Пусто — лимиты хранятся в памяти процесса.
+    redis_url: Optional[str] = None
+    rate_limit_enabled: bool = True
+    # Брать IP клиента из X-Real-IP (его ставит Caddy перед backend). Без прокси — false.
+    trust_proxy_headers: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+
+def check_secrets(s: Settings) -> None:
+    """
+    Не запускаться с секретом по умолчанию: им подписаны JWT (подделка входа под любым
+    пользователем), отпечатки паролей телефона и — без TOKEN_ENCRYPTION_KEY — ключ OAuth-токенов.
+    Случайные значения создаёт scripts/init_env.py.
+    """
+    if s.secret_key == INSECURE_SECRET_KEY or len(s.secret_key) < SECRET_KEY_MIN_LENGTH:
+        raise RuntimeError(
+            f"SECRET_KEY не задан или короче {SECRET_KEY_MIN_LENGTH} символов. "
+            "Создайте backend/.env: python scripts/init_env.py"
+        )
 
 
 # Singleton — импортировать отсюда

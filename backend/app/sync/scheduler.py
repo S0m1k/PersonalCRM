@@ -18,9 +18,12 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from ..config import settings
+from ..auth import ensure_legacy_admin, tenant_db
 from ..db import get_db
+from ..repositories import users as users_repo
 from ..models.sync import SyncError, SyncStats
 from ..repositories import sync as sync_repo
 from .oauth import google_refresh_token, ms_refresh_token
@@ -36,12 +39,41 @@ scheduler = AsyncIOScheduler(timezone="UTC")
 # ---------------------------------------------------------------------------
 
 
+async def user_dbs() -> list[AsyncIOMotorDatabase]:
+    """Базы всех пользователей: фоновые задачи обходят каждую."""
+    system_db = get_db()
+    await ensure_legacy_admin(system_db)
+    return [tenant_db(system_db, u.db_name) for u in await users_repo.list_users(system_db)]
+
+
+async def _for_each_user(job, name: str) -> None:
+    """Запустить job(db) для каждой базы; сбой у одного пользователя не мешает остальным."""
+    for db in await user_dbs():
+        try:
+            await job(db)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("%s failed for %s: %s", name, db.name, exc)
+
+
 async def periodic_sync() -> None:
     """Периодическая синхронизация всех подключений с включёнными контактами."""
+    await _for_each_user(_periodic_sync_db, "periodic_sync")
+
+
+async def refresh_expiring_tokens() -> None:
+    """Обновить токены, истекающие в ближайшие 10 минут."""
+    await _for_each_user(_refresh_tokens_db, "refresh_expiring_tokens")
+
+
+async def renew_webhooks() -> None:
+    """Продлить Microsoft-подписки, истекающие в ближайшие сутки."""
+    await _for_each_user(_renew_webhooks_db, "renew_webhooks")
+
+
+async def _periodic_sync_db(db: AsyncIOMotorDatabase) -> None:
     # Импорт здесь — избегаем циклического импорта с routers.sync
     from ..routers.sync import _run_google_sync, _run_microsoft_sync
 
-    db = get_db()
     connections = await sync_repo.list_connections(db)
     for conn in connections:
         if not conn.sync_contacts:
@@ -66,9 +98,7 @@ async def periodic_sync() -> None:
         )
 
 
-async def refresh_expiring_tokens() -> None:
-    """Обновить токены, истекающие в ближайшие 10 минут."""
-    db = get_db()
+async def _refresh_tokens_db(db: AsyncIOMotorDatabase) -> None:
     threshold = datetime.now(timezone.utc) + timedelta(minutes=10)
     for conn in await sync_repo.list_connections(db):
         if not conn.token_expires_at:
@@ -104,9 +134,7 @@ async def refresh_expiring_tokens() -> None:
         logger.info("refreshed token for connection %s", conn.id)
 
 
-async def renew_webhooks() -> None:
-    """Продлить Microsoft-подписки, истекающие в ближайшие сутки."""
-    db = get_db()
+async def _renew_webhooks_db(db: AsyncIOMotorDatabase) -> None:
     soon = datetime.now(timezone.utc) + timedelta(days=1)
     for conn in await sync_repo.list_connections(db):
         if conn.provider != "microsoft" or not conn.webhook_subscription_id:

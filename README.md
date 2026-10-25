@@ -11,8 +11,8 @@
 - **Backend:** Python (FastAPI), MongoDB
 - **Frontend:** Next.js (React)
 - **Sync:** Microsoft Graph API, Google People API
-- **Фоновые задачи:** APScheduler
-- **Режим:** single-user (multi-user — на будущее)
+- **Фоновые задачи:** APScheduler; Redis — счётчики рейт-лимитов
+- **Режим:** несколько пользователей, открытая регистрация; у каждого своя база MongoDB (`personalcrm_u_<id>`)
 
 ## Документация
 
@@ -25,10 +25,11 @@
 
 ```bash
 python scripts/init_env.py       # один раз: создаёт backend/.env со случайными секретами
-docker compose up -d --build     # вся система: MongoDB + backend + frontend
+docker compose up -d --build     # вся система: MongoDB + Redis + backend + frontend
 ```
 
-Открыть: **http://localhost:3300** — пользователь `admin`, пароль — строка `ADMIN_PASSWORD` в `backend/.env`.
+Открыть: **http://localhost:3300** и зарегистрироваться (или войти как `admin` с паролем `ADMIN_PASSWORD` из `backend/.env` —
+этот пользователь создаётся при первом запуске, ему же достаются данные однопользовательской версии).
 
 Порты открыты только на этом компьютере (`127.0.0.1`):
 

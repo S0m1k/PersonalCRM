@@ -15,6 +15,12 @@ services:
     environment:
       MONGO_INITDB_DATABASE: personalcrm
 
+  # Счётчики рейт-лимитов (и очередь задач ИИ). Данные не нужны после перезапуска — без тома.
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+
   backend:
     build: ./backend
     restart: unless-stopped
@@ -24,11 +30,13 @@ services:
       - "${BACKEND_BIND:-127.0.0.1}:8000:8000"
     depends_on:
       - mongo
+      - redis
     env_file:
       - ./backend/.env
     environment:
       # Внутри docker-сети база доступна по имени сервиса — перекрывает значение из .env
       MONGODB_URI: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379/0
 
   frontend:
     build:

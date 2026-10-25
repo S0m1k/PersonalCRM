@@ -13,10 +13,11 @@ import {
   MessageCircle,
   RefreshCw,
   Search,
+  UserRound,
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { clearToken, homeKey, type HomeSummary } from '@/lib/api';
+import { clearToken, homeKey, meKey, type HomeSummary, type Me } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Kbd } from '@/components/ui/tag';
 import { ThemeToggle } from './theme';
@@ -58,6 +59,7 @@ export function Sidebar({ onSearch, className }: { onSearch: () => void; classNa
   const pathname = usePathname();
   const router = useRouter();
   const { data: home } = useSWR<HomeSummary>(homeKey());
+  const { data: me } = useSWR<Me>(meKey);
 
   const main: NavItem[] = [
     { href: '/', label: 'Главная', icon: Home },
@@ -70,6 +72,7 @@ export function Sidebar({ onSearch, className }: { onSearch: () => void; classNa
     { href: '/sync', label: 'Синхронизация', icon: RefreshCw },
     { href: '/import', label: 'Импорт файла', icon: FileUp },
     { href: '/settings/templates', label: 'Шаблоны карточек', icon: LayoutTemplate },
+    { href: '/settings/account', label: 'Аккаунт', icon: UserRound },
   ];
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
@@ -111,9 +114,10 @@ export function Sidebar({ onSearch, className }: { onSearch: () => void; classNa
 
       <div className="mt-auto flex flex-col gap-px border-t border-line/60 p-2">
         <ThemeToggle className={itemClass} />
-        <button type="button" onClick={handleLogout} className={itemClass}>
+        <button type="button" onClick={handleLogout} className={itemClass} title={me?.email}>
           <LogOut />
-          <span>Выйти</span>
+          <span className="flex-1 truncate text-left">Выйти</span>
+          {me && <span className="max-w-[110px] truncate text-xs text-faint">{me.email}</span>}
         </button>
       </div>
     </aside>

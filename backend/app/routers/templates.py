@@ -9,15 +9,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from ..auth import get_current_user
-from ..db import get_db
+from ..auth import get_current_user, get_user_db
+from ..models.user import User
 from ..models.template import TemplateCreate, TemplateOut, TemplateUpdate
 from ..repositories import templates as repo
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
-DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
-AuthDep = Annotated[str, Depends(get_current_user)]
+DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_user_db)]
+AuthDep = Annotated[User, Depends(get_current_user)]
 
 
 def _not_found(template_id: str) -> HTTPException:

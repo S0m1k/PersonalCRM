@@ -26,8 +26,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
 
-from ..auth import get_current_user
-from ..db import get_db
+from ..auth import get_current_user, get_user_db
+from ..models.user import User
 from ..models.contact import ContactCreate, ContactUpdate
 from ..repositories import contacts as contacts_repo
 from ..repositories import sync as sync_repo
@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/import", tags=["import"])
 
-DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
-AuthDep = Annotated[str, Depends(get_current_user)]
+DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_user_db)]
+AuthDep = Annotated[User, Depends(get_current_user)]
 
 SESSION_COLLECTION = "import_sessions"
 

@@ -23,7 +23,7 @@ def client():
 
 @pytest.fixture
 def auth(client):
-    resp = client.post("/api/auth/login", data={"username": "admin", "password": "admin"})
+    resp = client.post("/api/auth/login", data={"username": "admin", "password": "admin-test-pass"})
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 

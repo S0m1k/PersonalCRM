@@ -23,8 +23,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from fastapi.responses import PlainTextResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from ..auth import parse_webhook_client_state, tenant_db
 from ..db import get_db
 from ..repositories import sync as sync_repo
+from ..repositories import users as users_repo
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,24 @@ async def _sync_connection_in_background(db: AsyncIOMotorDatabase, connection_id
     )
 
 
+async def _resolve_client_state(
+    system_db: AsyncIOMotorDatabase, client_state: object
+) -> Optional[tuple[AsyncIOMotorDatabase, str]]:
+    """
+    Подписанный clientState → (база пользователя, id подключения).
+    Неподписанные (в т.ч. подписки однопользовательской версии) игнорируются —
+    их продлевать не нужно, достаточно переподписаться в интерфейсе.
+    """
+    parsed = parse_webhook_client_state(client_state)
+    if parsed is None:
+        return None
+    user_id, connection_id = parsed
+    user = await users_repo.get_user(system_db, user_id)
+    if user is None:
+        return None
+    return tenant_db(system_db, user.db_name), connection_id
+
+
 @router.post("/microsoft", include_in_schema=False)
 async def microsoft_webhook(
     request: Request,
@@ -85,11 +105,15 @@ async def microsoft_webhook(
         body = await request.json()
     except Exception:
         return Response(status_code=202)
+    if not isinstance(body, dict) or not isinstance(body.get("value"), list):
+        return Response(status_code=202)
 
-    for item in body.get("value", []):
-        connection_id = item.get("clientState")
-        if connection_id:
-            background.add_task(_sync_connection_in_background, db, connection_id)
+    for item in body["value"]:
+        if not isinstance(item, dict):
+            continue
+        target = await _resolve_client_state(db, item.get("clientState"))
+        if target:
+            background.add_task(_sync_connection_in_background, *target)
 
     # Microsoft ждёт быстрый 202
     return Response(status_code=202)

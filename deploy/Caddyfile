@@ -1,0 +1,28 @@
+# Единая точка входа на сервере: /api, /dav → backend, остальное → frontend.
+# Снаружи сюда приходит Tailscale Funnel (или туннель), он передаёт IP клиента в X-Forwarded-For.
+{
+	servers {
+		# Запросы приходят от tailscaled / docker-proxy с частных адресов — им доверяем X-Forwarded-For.
+		# strict: берём крайний правый недоверенный адрес — клиент не подставит свой IP в заголовок.
+		trusted_proxies static private_ranges
+		trusted_proxies_strict
+		client_ip_headers X-Forwarded-For
+	}
+}
+
+:80 {
+	log {
+		output stdout
+		format json
+	}
+	@backend path /api/* /dav /dav/* /.well-known/carddav
+	handle @backend {
+		reverse_proxy backend:8000 {
+			# По этому заголовку backend считает рейт-лимиты (TRUST_PROXY_HEADERS=true)
+			header_up X-Real-IP {client_ip}
+		}
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

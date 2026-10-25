@@ -10,8 +10,8 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from ..auth import get_current_user
-from ..db import get_db
+from ..auth import get_current_user, get_user_db
+from ..models.user import User
 from ..models.contact import ContactCreate, ContactOut, ContactUpdate
 from ..repositories import contacts as repo
 from ..repositories import questions as questions_repo
@@ -21,9 +21,9 @@ from ..services.fields import FieldValidationError, validate_field_values
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
 # Алиас для аннотации зависимости БД
-DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
+DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_user_db)]
 # Алиас для зависимости auth (просто проверяет токен)
-AuthDep = Annotated[str, Depends(get_current_user)]
+AuthDep = Annotated[User, Depends(get_current_user)]
 
 
 # ---------------------------------------------------------------------------

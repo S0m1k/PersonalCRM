@@ -42,7 +42,7 @@ def client():
 # ---------------------------------------------------------------------------
 
 
-def get_token(client: TestClient, username: str = "admin", password: str = "admin") -> str:
+def get_token(client: TestClient, username: str = "admin", password: str = "admin-test-pass") -> str:
     """Логин и получение токена."""
     resp = client.post(
         "/api/auth/login",
@@ -65,7 +65,7 @@ class TestLogin:
     def test_login_success(self, client):
         resp = client.post(
             "/api/auth/login",
-            data={"username": "admin", "password": "admin"},
+            data={"username": "admin", "password": "admin-test-pass"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -82,7 +82,7 @@ class TestLogin:
     def test_login_wrong_username(self, client):
         resp = client.post(
             "/api/auth/login",
-            data={"username": "hacker", "password": "admin"},
+            data={"username": "hacker", "password": "admin-test-pass"},
         )
         assert resp.status_code == 401
 
@@ -90,7 +90,7 @@ class TestLogin:
         """Логин через JSON-тело (/api/auth/login/json)."""
         resp = client.post(
             "/api/auth/login/json",
-            json={"username": "admin", "password": "admin"},
+            json={"username": "admin", "password": "admin-test-pass"},
         )
         assert resp.status_code == 200
         assert "access_token" in resp.json()
