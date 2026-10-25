@@ -582,3 +582,115 @@ export interface CarddavStatus {
   username: string;
   path: string;
 }
+
+// ---------------------------------------------------------------------------
+// Календарь (Sprint 7)
+// ---------------------------------------------------------------------------
+
+export interface Attendee {
+  email: string;
+  name: string;
+  phone: string;
+  response: string;
+}
+
+export interface EventQuestion {
+  id: string;
+  contact_id: string;
+  contact_name: string;
+  text: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  /** ISO в UTC; для «весь день» — полночь первого дня и дня после последнего */
+  start: string;
+  end: string;
+  all_day: boolean;
+  timezone: string;
+  location: string;
+  description: string;
+  attendees: Attendee[];
+  contact_ids: string[];
+  contacts: { id: string; name: string }[];
+  /** Открытые вопросы «на встрече» к привязанным людям */
+  questions: EventQuestion[];
+  push_questions: boolean;
+  source: 'crm' | 'microsoft' | 'google';
+  connection_id: string | null;
+  external_id: string | null;
+  web_link: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventInput {
+  title?: string;
+  start?: string;
+  end?: string;
+  all_day?: boolean;
+  timezone?: string;
+  location?: string;
+  description?: string;
+  contact_ids?: string[];
+  push_questions?: boolean;
+  /** Только при создании: сразу записать в календарь подключения */
+  connection_id?: string | null;
+}
+
+/** Состояние календаря у подключения (поля появились в Sprint 7). */
+export interface CalendarConnection extends SyncConnection {
+  calendar_access: boolean;
+  calendar_last_sync: string | null;
+}
+
+/** Ключ SWR списка событий за период (и/или с одним человеком). */
+export function eventsKey(params: { start?: Date; end?: Date; contactId?: string }): string {
+  const qs = new URLSearchParams();
+  if (params.start) qs.set('start', params.start.toISOString());
+  if (params.end) qs.set('end', params.end.toISOString());
+  if (params.contactId) qs.set('contact_id', params.contactId);
+  return `/api/calendar/events?${qs.toString()}`;
+}
+
+export function createEvent(data: EventInput): Promise<CalendarEvent> {
+  return apiFetch<CalendarEvent>('/api/calendar/events', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateEvent(id: string, data: EventInput): Promise<CalendarEvent> {
+  return apiFetch<CalendarEvent>(`/api/calendar/events/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function deleteEvent(id: string): Promise<void> {
+  return apiFetch<void>(`/api/calendar/events/${id}`, { method: 'DELETE' });
+}
+
+/** Записать событие в календарь провайдера (или перезаписать там — обновить вопросы). */
+export function pushEvent(id: string, connectionId: string | null = null): Promise<CalendarEvent> {
+  return apiFetch<CalendarEvent>(`/api/calendar/events/${id}/push`, {
+    method: 'POST',
+    body: JSON.stringify({ connection_id: connectionId }),
+  });
+}
+
+export function triggerCalendarSync(connectionId: string): Promise<SyncLogEntry> {
+  return apiFetch<SyncLogEntry>(`/api/sync/calendar/${connectionId}`, { method: 'POST' });
+}
+
+export function updateConnection(
+  id: string,
+  data: { sync_contacts?: boolean; sync_calendar?: boolean },
+): Promise<CalendarConnection> {
+  return apiFetch<CalendarConnection>(`/api/sync/connections/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+/** Переподключить аккаунт (например, выдать доступ к календарю) — настройки подключения сохраняются. */
+export function reconnectProvider(
+  provider: 'microsoft' | 'google',
+  connectionId: string,
+): Promise<{ authorize_url: string; state: string }> {
+  return apiFetch(`/api/sync/connect/${provider}?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: 'POST',
+  });
+}

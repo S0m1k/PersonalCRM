@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import useSWR from 'swr';
-import { ArrowUpRight, Cake, CalendarDays, CircleHelp, Plus, Search, UserPlus } from 'lucide-react';
+import { ArrowUpRight, Cake, CircleHelp, Plus, Search, UserPlus } from 'lucide-react';
 import { homeKey, type HomeSummary, type UpcomingBirthday } from '@/lib/api';
 import { formatDate, plural } from '@/lib/utils';
 import { Avatar } from '@/components/app/avatar';
+import { TodayEvents } from '@/components/calendar/event-blocks';
 import { useAppActions } from '@/components/app/app-shell';
 import { EmptyState, Page, SectionTitle, Skeleton } from '@/components/app/page';
 import { Button } from '@/components/ui/button';
@@ -83,11 +84,16 @@ export default function HomePage() {
 
         <div className="flex flex-col gap-10">
           <section>
-            <SectionTitle>Сегодня</SectionTitle>
-            <div className="flex items-center gap-3 rounded-md bg-sidebar px-3 py-3 text-sm text-muted">
-              <CalendarDays className="size-5 shrink-0 text-faint" />
-              Встречи и задачи из календаря появятся здесь на следующем этапе.
-            </div>
+            <SectionTitle
+              aside={
+                <Link href="/calendar" className="flex items-center gap-0.5 text-xs text-muted hover:text-fg">
+                  Календарь <ArrowUpRight className="size-3.5" />
+                </Link>
+              }
+            >
+              Сегодня
+            </SectionTitle>
+            <TodayEvents />
           </section>
 
           <section>

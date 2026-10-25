@@ -50,6 +50,7 @@ import { EmptyState, Page, SectionTitle, Skeleton } from '@/components/app/page'
 import { EditableText, FieldValueEditor, PropertyRow, SelectValue } from '@/components/contact/editable';
 import { MultiValue } from '@/components/contact/multi-value';
 import { QuestionsPanel } from '@/components/contact/questions-panel';
+import { ContactEvents } from '@/components/calendar/event-blocks';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -298,6 +299,10 @@ export default function ContactPage() {
             <div className="mt-8">
               <SectionTitle>Открытые вопросы</SectionTitle>
               <QuestionsPanel contactId={contact.id} isCompact />
+            </div>
+            <div className="mt-8">
+              <SectionTitle>Встречи</SectionTitle>
+              <ContactEvents contact={{ id: contact.id, name: fullName(contact) || 'Без имени' }} />
             </div>
           </TabsContent>
 

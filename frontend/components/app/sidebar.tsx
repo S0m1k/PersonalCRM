@@ -65,7 +65,7 @@ export function Sidebar({ onSearch, className }: { onSearch: () => void; classNa
     { href: '/', label: 'Главная', icon: Home },
     { href: '/contacts', label: 'Контакты', icon: Users, count: home?.stats.contacts },
     { href: '/questions', label: 'Вопросы', icon: CircleHelp, count: home?.stats.open_questions },
-    { href: '/calendar', label: 'Календарь', icon: CalendarDays, soon: true },
+    { href: '/calendar', label: 'Календарь', icon: CalendarDays },
     { href: '/assistant', label: 'Помощник', icon: MessageCircle, soon: true },
   ];
   const service: NavItem[] = [
