@@ -798,18 +798,37 @@ export type CaptureAction = { index: number; error?: string } & (
   | { type: 'add_note'; text: string }
 );
 
+/** Как помощник искал: слова поиска, найденные контакты, шаги модели со временем. */
+export interface JobTrace {
+  intent?: 'capture' | 'question';
+  /** «Спросить»: слова поиска; «Записать»: номера и почта из записи */
+  terms?: string[];
+  search?: string[];
+  person?: { mention: string; first_name: string; last_name: string };
+  /** search — нашлись карточки; recent — поиск пуст, модель видела последние контакты */
+  source?: 'search' | 'recent';
+  found?: { id: string; name: string }[];
+  context?: { id: string; name: string }[];
+  llm?: { step: string; ms: number }[];
+  total_ms?: number;
+}
+
 export interface CaptureResult {
   text: string;
   contact_id: string | null;
   candidates: ContactRef[];
   new_contact: { first_name: string; last_name: string } | null;
   actions: CaptureAction[];
+  /** Запись похожа на вопрос: модель не вызывалась, интерфейс предлагает «Спросить» */
+  suggest_ask?: boolean;
+  trace?: JobTrace;
 }
 
 export interface AskResult {
   question: string;
   answer: string;
   contacts: ContactRef[];
+  trace?: JobTrace;
 }
 
 export interface AssistantJob<R = CaptureResult | AskResult> {
@@ -843,8 +862,9 @@ export function assistantJobKey(id: string): string {
   return `/api/assistant/jobs/${id}`;
 }
 
-export function startCapture(text: string): Promise<AssistantJob> {
-  return apiFetch<AssistantJob>('/api/assistant/capture', { method: 'POST', body: JSON.stringify({ text }) });
+/** force — записать, даже если текст похож на вопрос. */
+export function startCapture(text: string, force = false): Promise<AssistantJob> {
+  return apiFetch<AssistantJob>('/api/assistant/capture', { method: 'POST', body: JSON.stringify({ text, force }) });
 }
 
 export function startAsk(question: string): Promise<AssistantJob> {

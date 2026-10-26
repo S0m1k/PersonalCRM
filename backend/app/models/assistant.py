@@ -18,6 +18,8 @@ def _strip(value: Any) -> Any:
 
 class CaptureRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=CAPTURE_MAX)
+    # Записать, даже если текст похож на вопрос (после подсказки «Спросить?»)
+    force: bool = False
 
     _clean = field_validator("text", mode="before")(_strip)
 

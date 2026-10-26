@@ -80,3 +80,8 @@ def find_in_text(text: str) -> list[str]:
         if key.startswith("+") or looks_like_phone:
             keys.append(key)
     return list(dict.fromkeys(keys))
+
+
+def remove_from_text(text: str) -> str:
+    """Текст без номеров телефонов (для разбора слов вокруг них)."""
+    return _PHONE_IN_TEXT.sub(" ", text)

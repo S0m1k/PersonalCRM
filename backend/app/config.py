@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     ai_job_max_tries: int = 2         # повтор только при недоступной модели
     ai_result_ttl_s: int = 6 * 3600   # сколько хранится результат (предпросмотр)
     ai_queue_expires_s: int = 15 * 60  # задача, не взятая в работу за это время, отменяется
+    # Лог ai-worker: одна строка на задачу (время шагов, найденные id). Слова поиска — только если true
+    ai_log_queries: bool = True
+    ai_log_level: str = "INFO"
 
     model_config = SettingsConfigDict(
         env_file=".env",

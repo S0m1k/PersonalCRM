@@ -75,7 +75,7 @@ async def info(_user: AuthDep) -> AssistantInfo:
 
 @router.post("/capture", response_model=JobOut, status_code=status.HTTP_202_ACCEPTED, summary="Быстрый захват")
 async def capture(data: CaptureRequest, user: AuthDep, assistant: AssistantDep) -> JobOut:
-    return await _submit(assistant, user, "capture", {"text": data.text})
+    return await _submit(assistant, user, "capture", {"text": data.text, "force": data.force})
 
 
 @router.post("/ask", response_model=JobOut, status_code=status.HTTP_202_ACCEPTED, summary="Вопрос по базе")

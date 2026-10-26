@@ -6,12 +6,14 @@ arq-воркер задач ИИ. Запуск: arq app.ai.worker.WorkerSettings
 - Задача несёт только свой id; владельца и вход берём из записи в Redis, базу пользователя —
   по его записи в системной базе (tenant_db), как планировщик синхронизации.
 - Недоступная модель → повтор через RETRY_DELAY_S (до AI_JOB_MAX_TRIES), остальные ошибки — сразу failed.
+- Каждая задача пишет трассу (trace.py): в result.trace — владельцу, одной строкой — в лог.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
@@ -27,6 +29,7 @@ from .capture import run_capture
 from .jobs import RUN_JOB, JobStore
 from .llm import LLMError, LLMProvider, LLMUnavailableError, build_provider
 from .tools import ToolError
+from .trace import TimedLLM, log_job
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,14 @@ async def process_job(
         return record["status"] if record else "missing"
     user_id = record["user_id"]
     retrying = False
+    started = time.perf_counter()
+    timed = TimedLLM(llm)
+    status, error, result = "failed", "", None
+
+    def _log() -> None:
+        trace = {**((result or {}).get("trace") or {}), "llm": timed.calls}
+        log_job(job_id, record["kind"], user_id, status, round((time.perf_counter() - started) * 1000), trace, error)
+
     try:
         user = await users_repo.get_user(system_db, user_id)
         handler = HANDLERS.get(record["kind"])
@@ -68,29 +79,43 @@ async def process_job(
         await store.update(job_id, status="running", started_at=_now_iso())
         db = tenant_db(system_db, user.db_name)
         try:
-            result = await asyncio.wait_for(handler(db, llm, record["input"]), timeout=timeout_s)
+            result = await asyncio.wait_for(handler(db, timed, record["input"]), timeout=timeout_s)
         except LLMUnavailableError as exc:
             if job_try < max_tries:
                 retrying = True
+                status, error = "retry", str(exc)
                 await store.update(job_id, status="queued")
                 logger.warning("Задача %s: модель недоступна (%s), повтор", job_id, exc)
                 raise Retry(defer=RETRY_DELAY_S) from exc
-            await store.update(job_id, status="failed", error="Модель недоступна, попробуйте позже",
-                               finished_at=_now_iso())
+            error = "Модель недоступна, попробуйте позже"
+            await store.update(job_id, status="failed", error=error, finished_at=_now_iso())
             return "failed"
         except asyncio.TimeoutError:
-            await store.update(job_id, status="failed", error="Модель не успела ответить", finished_at=_now_iso())
+            error = "Модель не успела ответить"
+            await store.update(job_id, status="failed", error=error, finished_at=_now_iso())
             return "failed"
         except (LLMError, ToolError) as exc:
-            await store.update(job_id, status="failed", error=str(exc), finished_at=_now_iso())
+            error = str(exc)
+            await store.update(job_id, status="failed", error=error, finished_at=_now_iso())
             return "failed"
         except Exception:  # noqa: BLE001 — подробности в лог, пользователю — общее сообщение
             logger.exception("Задача %s упала", job_id)
-            await store.update(job_id, status="failed", error="Внутренняя ошибка помощника", finished_at=_now_iso())
+            error = "Внутренняя ошибка помощника"
+            await store.update(job_id, status="failed", error=error, finished_at=_now_iso())
             return "failed"
+        status = "done"
+        result = {
+            **result,
+            "trace": {
+                **(result.get("trace") or {}),
+                "llm": timed.calls,
+                "total_ms": round((time.perf_counter() - started) * 1000),
+            },
+        }
         await store.update(job_id, status="done", result=result, finished_at=_now_iso())
         return "done"
     finally:
+        _log()
         if not retrying:
             await store.release(user_id, job_id)
 
@@ -99,7 +124,19 @@ async def run_ai_job(ctx: dict[str, Any], job_id: str) -> str:
     return await process_job(ctx["store"], ctx["system_db"], ctx["llm"], job_id, job_try=ctx.get("job_try", 1))
 
 
+def _setup_logging() -> None:
+    """arq настраивает только свой логгер: без этого INFO-строки приложения (трасса задач) теряются."""
+    app_logger = logging.getLogger("app")
+    app_logger.setLevel(settings.ai_log_level.upper())
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%H:%M:%S"))
+        app_logger.addHandler(handler)
+        app_logger.propagate = False
+
+
 async def startup(ctx: dict[str, Any]) -> None:
+    _setup_logging()
     client = AsyncIOMotorClient(settings.mongodb_uri, serverSelectionTimeoutMS=3000)
     ctx["mongo"] = client
     ctx["system_db"] = client[settings.db_name]

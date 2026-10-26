@@ -24,6 +24,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { CapturePreview } from '@/components/assistant/capture-preview';
 import { JobStatus, isPending } from '@/components/assistant/job-status';
+import { QuestionHint } from '@/components/assistant/question-hint';
+import { TraceDetails } from '@/components/assistant/trace-details';
 
 type Mode = 'capture' | 'ask';
 
@@ -71,20 +73,30 @@ export default function AssistantPage() {
     reset();
   }
 
-  async function handleSubmit(event?: FormEvent) {
-    event?.preventDefault();
-    const value = text.trim();
-    if (!value || busy) return;
+  async function submit(kind: Mode, value: string, force = false) {
     setIsSubmitting(true);
     reset();
     try {
-      const created = mode === 'capture' ? await startCapture(value) : await startAsk(value);
+      const created = kind === 'capture' ? await startCapture(value, force) : await startAsk(value);
       setJobId(created.id);
     } catch (err) {
       toast.error(errorText(err));
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleSubmit(event?: FormEvent) {
+    event?.preventDefault();
+    const value = text.trim();
+    if (!value || busy) return;
+    await submit(mode, value);
+  }
+
+  /** «Записать» получило вопрос — задать его в «Спросить» тем же текстом. */
+  async function handleAskInstead() {
+    setMode('ask');
+    await submit('ask', text.trim());
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -173,16 +185,30 @@ export default function AssistantPage() {
 
       {job?.status === 'done' || job?.status === 'applied' ? (
         job.kind === 'capture' ? (
-          <CapturePreview
-            key={job.id}
-            result={job.result as CaptureResult}
-            applied={applied}
-            busy={isApplying}
-            onApply={handleApply}
-            onDiscard={reset}
-          />
+          (job.result as CaptureResult).suggest_ask ? (
+            <QuestionHint
+              busy={busy}
+              onAsk={() => void handleAskInstead()}
+              onRecordAnyway={() => void submit('capture', text.trim(), true)}
+            />
+          ) : (
+            <>
+              <CapturePreview
+                key={job.id}
+                result={job.result as CaptureResult}
+                applied={applied}
+                busy={isApplying}
+                onApply={handleApply}
+                onDiscard={reset}
+              />
+              <TraceDetails trace={(job.result as CaptureResult).trace} />
+            </>
+          )
         ) : (
-          <AskAnswer result={job.result as AskResult} />
+          <>
+            <AskAnswer result={job.result as AskResult} />
+            <TraceDetails trace={(job.result as AskResult).trace} />
+          </>
         )
       ) : null}
     </Page>

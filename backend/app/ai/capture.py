@@ -6,6 +6,10 @@
 3. Модель раскладывает текст по схеме CAPTURE_SCHEMA: поля, заметки, новые вопросы, ответы.
 4. Предпросмотр: каждое действие проверено инструментами (tools.py), с «было → станет».
 5. apply_plan выполняет выбранные пользователем действия — уже без модели.
+
+Если запись похожа на вопрос (intent.looks_like_question) — модель не вызывается, результат
+с suggest_ask=True: интерфейс предлагает «Спросить». payload.force — записать всё равно.
+В result.trace — что искали и кого нашли (видит только владелец задачи).
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from ..repositories import contacts as contacts_repo
 from . import tools
+from .intent import looks_like_question
 from .llm import LLMProvider
 from .tools import ToolError
 
@@ -174,8 +179,22 @@ async def build_actions(db: AsyncIOMotorDatabase, contact_id: Optional[str], raw
     return [{**a, "index": i} for i, a in enumerate(actions[:MAX_ACTIONS])]
 
 
+def _question_result(text: str) -> dict:
+    return {
+        "text": text,
+        "contact_id": None,
+        "candidates": [],
+        "new_contact": None,
+        "actions": [],
+        "suggest_ask": True,
+        "trace": {"intent": "question"},
+    }
+
+
 async def run_capture(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict) -> dict:
     text = str(payload.get("text", "")).strip()
+    if not payload.get("force") and looks_like_question(text):
+        return _question_result(text)
     person = await llm.complete_json(PERSON_PROMPT, text, PERSON_SCHEMA, "person")
     candidates = await find_candidates(db, person, text)
     cards = [await tools.get_contact(db, c["id"]) for c in candidates]
@@ -200,6 +219,13 @@ async def run_capture(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict)
         "candidates": candidates,
         "new_contact": new_name if new_name["first_name"] or new_name["last_name"] else None,
         "actions": await build_actions(db, chosen or None, raw),
+        "suggest_ask": False,
+        "trace": {
+            "intent": "capture",
+            "person": {k: str(person.get(k, "")) for k in ("mention", "first_name", "last_name")},
+            "search": [*tools.contacts_in_text(text)],
+            "found": [{"id": c["id"], "name": c["name"]} for c in candidates],
+        },
     }
 
 

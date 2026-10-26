@@ -5,7 +5,7 @@
    номера телефонов и email вынимает код (tools.contacts_in_text) — модели их не доверяем.
 2. Поиск по базе пользователя (tools.search_contacts), карточки с вопросами — в контекст.
 3. Модель отвечает только по контексту и называет контакты, на которые опиралась.
-Ничего не меняет в базе.
+Ничего не меняет в базе. В result.trace — что искали, нашёл ли поиск и что ушло в контекст.
 """
 
 from __future__ import annotations
@@ -90,13 +90,20 @@ async def _card_with_answers(db: AsyncIOMotorDatabase, contact_id: str) -> dict:
     return compact_card({**card, "answered_questions": [{"question": q.text, "answer": q.answer} for q in answered]})
 
 
-async def collect_context(db: AsyncIOMotorDatabase, terms: list[str]) -> list[dict]:
+async def find_contacts(db: AsyncIOMotorDatabase, terms: list[str]) -> dict[str, dict]:
+    """Контакты по словам поиска и формам имён (Аня → Анна, Анюта), без повторов."""
     found: dict[str, dict] = {}
     for term in [*terms, *(n for t in terms for n in tools.name_variants(t))]:
         for item in await tools.search_contacts(db, term):
             found.setdefault(item["id"], item)
+    return found
+
+
+async def build_context(db: AsyncIOMotorDatabase, terms: list[str]) -> tuple[list[dict], str]:
+    """Контекст для ответа и откуда он: "search" — найденные карточки, "recent" — поиск пуст."""
+    found = await find_contacts(db, terms)
     if found:
-        return [await _card_with_answers(db, cid) for cid in list(found)[:MAX_CONTEXT_CONTACTS]]
+        return [await _card_with_answers(db, cid) for cid in list(found)[:MAX_CONTEXT_CONTACTS]], "search"
     # Поиск ничего не дал (вопрос про всех): краткий список последних контактов
     recent = await contacts_repo.list_contacts(db, limit=FALLBACK_RECENT)
     return [
@@ -107,13 +114,18 @@ async def collect_context(db: AsyncIOMotorDatabase, terms: list[str]) -> list[di
             "emails": [e.value for e in c.emails],
         }
         for c in recent
-    ]
+    ], "recent"
+
+
+async def collect_context(db: AsyncIOMotorDatabase, terms: list[str]) -> list[dict]:
+    context, _ = await build_context(db, terms)
+    return context
 
 
 async def run_ask(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict) -> dict:
     question = str(payload.get("question", "")).strip()
-    terms = [*tools.contacts_in_text(question), *await _terms(llm, question)]
-    context = await collect_context(db, list(dict.fromkeys(terms)))
+    terms = list(dict.fromkeys([*tools.contacts_in_text(question), *await _terms(llm, question)]))
+    context, source = await build_context(db, terms)
     user_message = f"<контакты>\n{json.dumps(context, ensure_ascii=False)}\n</контакты>\n\nВопрос: {question}"
     raw = await llm.complete_json(
         ANSWER_PROMPT.format(today=date.today().isoformat()), user_message, ANSWER_SCHEMA, "answer"
@@ -124,4 +136,10 @@ async def run_ask(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict) -> 
         "question": question,
         "answer": str(raw.get("answer", "")).strip() or "Не нашёл ответа в базе.",
         "contacts": [{"id": i, "name": names[i]} for i in dict.fromkeys(ids)],
+        "trace": {
+            "terms": terms,
+            # search — карточки найденных; recent — поиск пуст, в контексте последние контакты
+            "source": source,
+            "context": [{"id": c["id"], "name": c["name"]} for c in context],
+        },
     }
