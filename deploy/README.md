@@ -41,6 +41,19 @@ docker compose -p personalcrm -f docker-compose.yml -f deploy/docker-compose.ser
 
 Вход и настройки Funnel хранятся в томе `tailscale_state` и переживают перезапуски.
 
+## Модель ИИ (Ollama на контейнере 102, ai-lxc)
+
+Модель держится в видеопамяти постоянно, иначе Ollama выгружает её после простоя и первый
+запрос ждёт ~40 с загрузки. На контейнере:
+
+- `/etc/systemd/system/ollama.service.d/zz-crm-keepalive.conf` — `OLLAMA_KEEP_ALIVE=-1`
+  и предзагрузка модели при старте сервиса (`ExecStartPost`, в фоне);
+- `/usr/local/bin/crm-ollama-preload.sh` — сама предзагрузка (модель — `CRM_PRELOAD_MODEL`,
+  по умолчанию `qwen3.5:4b`; при смене `LLM_MODEL` поменять и здесь).
+
+Проверка: `ollama ps` — в колонке UNTIL `Forever`. Откат: удалить оба файла,
+`systemctl daemon-reload && systemctl restart ollama`.
+
 ## Резервные копии
 
 ```bash
