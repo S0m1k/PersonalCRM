@@ -10,10 +10,12 @@ from typing import Callable, Optional
 DAV = "DAV:"
 CARD = "urn:ietf:params:xml:ns:carddav"
 CS = "http://calendarserver.org/ns/"
+CALDAV = "urn:ietf:params:xml:ns:caldav"
 
 ET.register_namespace("d", DAV)
 ET.register_namespace("card", CARD)
 ET.register_namespace("cs", CS)
+ET.register_namespace("c", CALDAV)
 
 
 def q(ns: str, name: str) -> str:
@@ -69,6 +71,16 @@ def reports(*names: str) -> PropValue:
 def address_data_types() -> PropValue:
     def fill(el: ET.Element) -> None:
         ET.SubElement(el, q(CARD, "address-data-type"), {"content-type": "text/vcard", "version": "3.0"})
+
+    return fill
+
+
+def calendar_components(*names: str) -> PropValue:
+    """supported-calendar-component-set: <c:comp name="VEVENT"/>."""
+
+    def fill(el: ET.Element) -> None:
+        for name in names:
+            ET.SubElement(el, q(CALDAV, "comp"), {"name": name})
 
     return fill
 

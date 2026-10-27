@@ -27,8 +27,10 @@ from ..auth import carddav_digest, get_current_user, tenant_db
 from ..db import get_db
 from ..models.user import User
 from ..repositories import users as users_repo
+from ..caldav import handlers as caldav
 from . import store
 from .xml import (
+    CALDAV,
     CARD,
     CS,
     DAV,
@@ -100,6 +102,7 @@ def _common() -> dict:
         q(DAV, "current-user-principal"): href(PRINCIPAL),
         q(DAV, "principal-URL"): href(PRINCIPAL),
         q(CARD, "addressbook-home-set"): href(HOME),
+        q(CALDAV, "calendar-home-set"): href(caldav.CAL_HOME),
     }
 
 
@@ -164,6 +167,11 @@ async def well_known() -> RedirectResponse:
     return RedirectResponse(ROOT, status_code=status.HTTP_301_MOVED_PERMANENTLY)
 
 
+@router.api_route("/.well-known/caldav", methods=METHODS)
+async def well_known_caldav() -> RedirectResponse:
+    return RedirectResponse(ROOT, status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
 @router.api_route("/dav", methods=METHODS)
 async def dav_no_slash() -> RedirectResponse:
     return RedirectResponse(ROOT, status_code=status.HTTP_301_MOVED_PERMANENTLY)
@@ -177,8 +185,11 @@ async def dav(path: str, request: Request, db: DavDbDep) -> Response:
     if method == "OPTIONS":
         return Response(
             status_code=200,
-            headers={"DAV": "1, 3, addressbook", "Allow": ", ".join(METHODS)},
+            headers={"DAV": "1, 3, addressbook, calendar-access", "Allow": ", ".join(METHODS)},
         )
+
+    if parts and parts[0] == "calendars":
+        return await caldav.handle(method, parts, request, db)
 
     if len(parts) == 3 and parts[:2] == ["addressbooks", "contacts"]:
         return await _card_request(method, parts[2], request, db)
