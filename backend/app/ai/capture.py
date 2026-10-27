@@ -21,7 +21,9 @@ from typing import Any, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from ..repositories import contacts as contacts_repo
+from ..services import phones
 from . import tools
+from .commands import is_creation_note, name_from_command
 from .intent import looks_like_question
 from .llm import LLMProvider
 from .tools import ToolError
@@ -150,8 +152,19 @@ async def _field_action(db: AsyncIOMotorDatabase, contact: Any, key: str, value:
     return action
 
 
-async def build_actions(db: AsyncIOMotorDatabase, contact_id: Optional[str], raw: dict) -> list[dict]:
-    """Ответ модели → список действий для предпросмотра (неподходящее помечено error)."""
+# Ключи, которые модель путает с полями: имя задаётся при создании контакта, телефоны и почта
+# берутся из текста правилами (add_phone / add_email) — иначе они осели бы «своими полями»
+_NOT_FIELDS = {
+    "name", "first_name", "last_name", "full_name", "имя", "фамилия", "фио",
+    "phone", "phones", "tel", "телефон", "телефоны", "номер",
+    "email", "emails", "e-mail", "mail", "почта", "эл. почта",
+}
+
+
+async def build_actions(
+    db: AsyncIOMotorDatabase, contact_id: Optional[str], raw: dict, text: str = ""
+) -> list[dict]:
+    """Ответ модели + текст записи → список действий для предпросмотра (неподходящее помечено error)."""
     contact = await contacts_repo.get_contact_by_id(db, contact_id) if contact_id else None
     open_questions = {}
     if contact is not None:
@@ -160,8 +173,15 @@ async def build_actions(db: AsyncIOMotorDatabase, contact_id: Optional[str], raw
     actions: list[dict] = []
     for item in _dicts(raw.get("fields")):
         key, value = str(item.get("key", "")).strip(), str(item.get("value", "")).strip()
-        if key and value:
+        if key and value and key.lower() not in _NOT_FIELDS:
             actions.append(await _field_action(db, contact, key, value))
+    # Телефоны и почта — из самого текста: модель их теряет и переписывает
+    for number in phones.find_in_text(text):
+        if contact is None or not any(phones.same_phone(number, p.value) for p in contact.phones):
+            actions.append({"type": "add_phone", "value": number})
+    for address in tools.emails_in_text(text):
+        if contact is None or address not in {e.value.strip().lower() for e in contact.emails}:
+            actions.append({"type": "add_email", "value": address})
     for item in _dicts(raw.get("answers")):
         answer = str(item.get("answer", "")).strip()
         question_id = str(item.get("question_id", "")).strip()
@@ -175,7 +195,8 @@ async def build_actions(db: AsyncIOMotorDatabase, contact_id: Optional[str], raw
             "answer": answer,
         })
     actions += [{"type": "add_question", "text": t} for t in _strings(raw.get("new_questions"))]
-    actions += [{"type": "add_note", "text": t} for t in _strings(raw.get("notes"))]
+    # «Создан новый контакт …» — пересказ команды, а не заметка о человеке
+    actions += [{"type": "add_note", "text": t} for t in _strings(raw.get("notes")) if not is_creation_note(t)]
     return [{**a, "index": i} for i, a in enumerate(actions[:MAX_ACTIONS])]
 
 
@@ -196,6 +217,13 @@ async def run_capture(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict)
     if not payload.get("force") and looks_like_question(text):
         return _question_result(text)
     person = await llm.complete_json(PERSON_PROMPT, text, PERSON_SCHEMA, "person")
+    name_source = "model"
+    if not any(str(person.get(k, "")).strip() for k in ("mention", "first_name", "last_name")):
+        # Маленькая модель теряет человека на длинной команде: «создай контакт Иван Петров, телефон …»
+        named = name_from_command(text)
+        if named:
+            person = {**person, "mention": named["first_name"], **named}
+            name_source = "command"
     candidates = await find_candidates(db, person, text)
     cards = [await tools.get_contact(db, c["id"]) for c in candidates]
     raw = await llm.complete_json(
@@ -213,16 +241,23 @@ async def run_capture(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict)
         "first_name": str(person.get("first_name") or person.get("mention") or "").strip(),
         "last_name": str(person.get("last_name", "")).strip(),
     }
+    actions = await build_actions(db, chosen or None, raw, text)
+    if not actions and not chosen and not candidates and name_from_command(text):
+        # «Создай контакт Иван Петров» без подробностей: предлагать нечего, кроме самого контакта
+        full = " ".join(p for p in (new_name["first_name"], new_name["last_name"]) if p)
+        if full:
+            actions = [{"type": "create_contact", "name": full, "index": 0}]
     return {
         "text": text,
         "contact_id": chosen or None,
         "candidates": candidates,
         "new_contact": new_name if new_name["first_name"] or new_name["last_name"] else None,
-        "actions": await build_actions(db, chosen or None, raw),
+        "actions": actions,
         "suggest_ask": False,
         "trace": {
             "intent": "capture",
             "person": {k: str(person.get(k, "")) for k in ("mention", "first_name", "last_name")},
+            **({"name_source": "command"} if name_source == "command" else {}),
             "search": [*tools.contacts_in_text(text)],
             "found": [{"id": c["id"], "name": c["name"]} for c in candidates],
         },
@@ -237,6 +272,12 @@ async def _apply_action(db: AsyncIOMotorDatabase, contact_id: str, action: dict)
         await tools.add_note(db, contact_id, action["text"])
     elif kind == "add_question":
         await tools.add_question(db, contact_id, action["text"])
+    elif kind == "create_contact":
+        return  # сам контакт уже создан в apply_plan, когда цель — «новый контакт»
+    elif kind == "add_phone":
+        await tools.add_phone(db, contact_id, action["value"])
+    elif kind == "add_email":
+        await tools.add_email(db, contact_id, action["value"])
     elif kind == "answer_question":
         await tools.answer_question(
             db, contact_id, action["answer"], question_id=action.get("question_id") or None,

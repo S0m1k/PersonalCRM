@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from ..models.contact import ContactCreate, ContactOut, ContactUpdate, CustomField
+from ..models.contact import ContactCreate, ContactOut, ContactUpdate, CustomField, Email, Phone
 from ..models.question import QuestionCreate, QuestionOut, QuestionUpdate
 from ..models.template import FieldDef
 from ..repositories import contacts as contacts_repo
@@ -66,6 +66,11 @@ for _family in NAME_FAMILIES:
 
 
 _EMAIL_IN_TEXT = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def emails_in_text(text: str) -> list[str]:
+    """Адреса почты из текста, в нижнем регистре, без повторов."""
+    return list(dict.fromkeys(e.lower() for e in _EMAIL_IN_TEXT.findall(text)))
 
 
 def contacts_in_text(text: str) -> list[str]:
@@ -260,6 +265,38 @@ async def update_fields(db: AsyncIOMotorDatabase, contact_id: str, changes: dict
                 ]
     update = ContactUpdate(**base, fields=typed if defs else None, custom_fields=custom)
     updated = await contacts_repo.update_contact(db, contact_id, update)
+    if updated is None:
+        raise ToolError("Контакт не найден")
+    return updated
+
+
+async def add_phone(db: AsyncIOMotorDatabase, contact_id: str, value: str) -> ContactOut:
+    """Добавить телефон в карточку; такой же номер (в любой записи) второй раз не добавляется."""
+    contact = await _require_contact(db, contact_id)
+    number = value.strip()
+    if not number or len(number) > 50:
+        raise ToolError("Некорректный номер телефона")
+    if any(phones.same_phone(number, p.value) for p in contact.phones):
+        return contact
+    updated = await contacts_repo.update_contact(
+        db, contact_id, ContactUpdate(phones=[*contact.phones, Phone(value=number, label="мобильный")])
+    )
+    if updated is None:
+        raise ToolError("Контакт не найден")
+    return updated
+
+
+async def add_email(db: AsyncIOMotorDatabase, contact_id: str, value: str) -> ContactOut:
+    """Добавить адрес почты в карточку; уже имеющийся (без учёта регистра) не дублируется."""
+    contact = await _require_contact(db, contact_id)
+    address = value.strip().lower()
+    if not _EMAIL_IN_TEXT.fullmatch(address) or len(address) > 320:
+        raise ToolError("Некорректный адрес почты")
+    if any(e.value.strip().lower() == address for e in contact.emails):
+        return contact
+    updated = await contacts_repo.update_contact(
+        db, contact_id, ContactUpdate(emails=[*contact.emails, Email(value=address, label="email")])
+    )
     if updated is None:
         raise ToolError("Контакт не найден")
     return updated

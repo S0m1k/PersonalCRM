@@ -26,7 +26,10 @@ export function TraceDetails({ trace }: { trace?: JobTrace }) {
         {person && (
           <>
             <dt className="text-faint">О ком запись</dt>
-            <dd>{person}</dd>
+            <dd>
+              {person}
+              {trace.name_source === 'command' && <span className="text-faint"> — имя взято из команды</span>}
+            </dd>
           </>
         )}
         <dt className="text-faint">Искал</dt>

@@ -332,6 +332,153 @@ class TestNewContactName:
         assert resp.status_code == 422
 
 
+CREATE_TEXT = "Создай контакт Иван Петров, телефон +7 900 123-45-67, компания Ромашка, директор"
+
+
+def create_command_responder(schema_name, system, user):
+    """Как на длинной команде: модель теряет человека, хотя имя стоит в тексте, и пишет заметку-эхо."""
+    if schema_name == "person":
+        return {"mention": "", "first_name": "", "last_name": ""}
+    return {
+        "contact_id": "",
+        # name и phone — мусорные ключи модели: имя и телефон обрабатываются отдельно
+        "fields": [
+            {"key": "name", "value": "Иван Петров"},
+            {"key": "phone", "value": "+7 900 123-45-67"},
+            {"key": "company", "value": "Ромашка"},
+            {"key": "position", "value": "директор"},
+        ],
+        "answers": [],
+        "new_questions": [],
+        "notes": ["Создан новый контакт Иван Петров, директор компании Ромашка"],
+    }
+
+
+def bare_command_responder(schema_name, system, user):
+    """«Создай контакт Иван Петров» — модель находит имя, но предлагать ей нечего (или только эхо команды)."""
+    if schema_name == "person":
+        return {"mention": "Иван", "first_name": "Иван", "last_name": "Петров"}
+    return {"contact_id": "", "fields": [], "answers": [], "new_questions": [], "notes": ["Создан новый контакт Иван Петров"]}
+
+
+class TestCreateContactCommand:
+    def _preview(self, client, anna, assistant, system_db, text=CREATE_TEXT) -> tuple[dict, dict]:
+        job = _capture(client, anna, text=text)
+        _run(client, assistant, system_db, job["id"], llm=FakeLLM(create_command_responder))
+        return job, _job(client, anna, job["id"]).json()["result"]
+
+    def test_name_is_taken_from_the_command_when_model_returns_nobody(self, client, anna, assistant, system_db):
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        assert result["new_contact"] == {"first_name": "Иван", "last_name": "Петров"}
+        assert result["contact_id"] is None
+
+    def test_trace_shows_where_the_name_came_from(self, client, anna, assistant, system_db):
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        assert result["trace"]["person"]["first_name"] == "Иван"
+        assert result["trace"]["name_source"] == "command"
+
+    def test_echo_note_is_dropped(self, client, anna, assistant, system_db):
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        assert "add_note" not in [a["type"] for a in result["actions"]]
+
+    def test_junk_name_and_phone_keys_from_model_are_dropped(self, client, anna, assistant, system_db):
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        keys = [a["key"] for a in result["actions"] if a["type"] == "update_field"]
+
+        assert keys == ["company", "position"]
+
+    def test_phone_from_text_is_a_real_phone_action(self, client, anna, assistant, system_db):
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        phones = [a for a in result["actions"] if a["type"] == "add_phone"]
+
+        assert [p["value"] for p in phones] == ["+79001234567"]
+
+    def test_email_from_text_is_a_real_email_action(self, client, anna, assistant, system_db):
+        _, result = self._preview(
+            client, anna, assistant, system_db, text="Создай контакт Иван Петров, почта Ivan.Petrov@Romashka.ru"
+        )
+
+        emails = [a for a in result["actions"] if a["type"] == "add_email"]
+
+        assert [e["value"] for e in emails] == ["ivan.petrov@romashka.ru"]
+
+    def test_apply_creates_the_contact_without_typing_the_name(self, client, anna, assistant, system_db):
+        job, result = self._preview(client, anna, assistant, system_db)
+
+        resp = client.post(
+            f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [a["index"] for a in result["actions"]]}, headers=anna
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert all(r["ok"] for r in resp.json()["results"])
+        card = client.get(f"/api/contacts/{resp.json()['contact_id']}", headers=anna).json()
+        assert (card["first_name"], card["last_name"]) == ("Иван", "Петров")
+        assert (card["company"], card["position"]) == ("Ромашка", "директор")
+        assert [(p["value"], p["label"]) for p in card["phones"]] == [("+79001234567", "мобильный")]
+        assert card["custom_fields"] == []
+
+    def test_same_phone_is_not_added_twice(self, client, anna, assistant, system_db):
+        ivan = _contact(
+            client, anna, first_name="Иван", last_name="Петров", phones=[{"value": "8 (900) 123-45-67", "label": "мобильный"}]
+        )
+        job, result = self._preview(client, anna, assistant, system_db)
+
+        resp = client.post(
+            f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [a["index"] for a in result["actions"]]}, headers=anna
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert all(r["ok"] for r in resp.json()["results"])
+        assert len(client.get(f"/api/contacts/{ivan['id']}", headers=anna).json()["phones"]) == 1
+
+    def test_bare_command_offers_to_create_the_contact(self, client, anna, assistant, system_db):
+        job = _capture(client, anna, text="Создай контакт Иван Петров")
+        _run(client, assistant, system_db, job["id"], llm=FakeLLM(bare_command_responder))
+        result = _job(client, anna, job["id"]).json()["result"]
+
+        assert [(a["type"], a["name"]) for a in result["actions"]] == [("create_contact", "Иван Петров")]
+
+        resp = client.post(f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0]}, headers=anna)
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["created_contact"]["name"] == "Иван Петров"
+        assert [(r["index"], r["ok"]) for r in resp.json()["results"]] == [(0, True)]
+
+    def test_no_create_action_when_there_is_something_else_to_save(self, client, anna, assistant, system_db):
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        assert "create_contact" not in [a["type"] for a in result["actions"]]
+
+    def test_no_create_action_for_existing_person(self, client, anna, assistant, system_db):
+        _contact(client, anna, first_name="Иван", last_name="Петров")
+        job = _capture(client, anna, text="Создай контакт Иван Петров")
+
+        _run(client, assistant, system_db, job["id"], llm=FakeLLM(bare_command_responder))
+
+        assert _job(client, anna, job["id"]).json()["result"]["actions"] == []
+
+    def test_existing_person_from_command_is_found_not_duplicated(self, client, anna, assistant, system_db):
+        ivan = _contact(client, anna, first_name="Иван", last_name="Петров")
+
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        assert result["contact_id"] == ivan["id"]
+
+    def test_model_name_wins_over_the_command_rules(self, client, anna, assistant, system_db):
+        job = _capture(client, anna, text="Создай контакт Иван Петров")
+        _run(client, assistant, system_db, job["id"], llm=FakeLLM(petya_responder))  # модель вернула «Пётр»
+
+        result = _job(client, anna, job["id"]).json()["result"]
+
+        assert result["new_contact"] == {"first_name": "Пётр", "last_name": ""}
+        assert result["trace"].get("name_source") != "command"
+
+
 class TestCrossTenant:
     def test_other_user_cannot_see_cancel_or_apply(self, client, anna, boris, assistant, system_db):
         _contact(client, anna, first_name="Пётр")

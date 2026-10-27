@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Check, CircleCheck, CircleHelp, NotebookPen, PenLine, UserPlus } from 'lucide-react';
+import { AtSign, Check, CircleCheck, CircleHelp, NotebookPen, PenLine, Phone, UserPlus } from 'lucide-react';
 import type { ApplyResult, CaptureAction, CaptureResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,16 @@ function ActionBody({ action }: { action: CaptureAction }) {
       return <span>{action.text}</span>;
     case 'add_note':
       return <span>{action.text}</span>;
+    case 'add_phone':
+    case 'add_email':
+      return <span className="font-medium">{action.value}</span>;
+    case 'create_contact':
+      return (
+        <>
+          <span className="text-muted">Создать контакт </span>
+          <span className="font-medium">{action.name}</span>
+        </>
+      );
   }
 }
 
@@ -41,6 +51,9 @@ const ACTION_META: Record<CaptureAction['type'], { icon: typeof PenLine; label: 
   answer_question: { icon: CircleCheck, label: 'Ответ' },
   add_question: { icon: CircleHelp, label: 'Спросить' },
   add_note: { icon: NotebookPen, label: 'Заметка' },
+  add_phone: { icon: Phone, label: 'Телефон' },
+  add_email: { icon: AtSign, label: 'Почта' },
+  create_contact: { icon: UserPlus, label: 'Контакт' },
 };
 
 type Props = {

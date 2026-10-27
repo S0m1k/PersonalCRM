@@ -1,0 +1,73 @@
+"""
+Прямые команды «создай контакт Иван Петров, …»: имя достаётся правилами, без модели.
+
+Маленькая модель на длинной команде нередко возвращает пустого человека, хотя имя стоит
+прямо после «создай контакт». Правила срабатывают только как запасной вариант — когда модель
+имени не вернула.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Optional
+
+MAX_NAME_WORDS = 3
+
+# «создай / добавь / заведи … контакт / человека / клиента …», а также «новый контакт»
+_COMMAND = re.compile(
+    r"(?:(?:созда\w*|добав\w*|завед\w*|завест\w*|внес\w*|нов\w+)\s+)+"
+    r"(?:(?:нов\w+)\s+)?"
+    r"(?:контакт\w*|человек\w*|карточк\w*|клиент\w*|партн[её]р\w*|сотрудник\w*|знаком\w+)"
+    r"\s*[:\-—–]?\s*",
+    re.IGNORECASE,
+)
+_WORD = re.compile(r"[A-Za-zА-Яа-яЁё]+(?:-[A-Za-zА-Яа-яЁё]+)?")
+# Слова, на которых имя заканчивается: «Мария из Сбера», «Олег телефон …»
+_STOP = {
+    "из", "в", "во", "на", "у", "с", "со", "и", "по", "для", "от", "тел", "телефон", "номер", "email", "почта",
+    "компания", "компании", "работает", "живёт", "живет", "город", "должность", "дата", "день", "рождения",
+}
+# Эхо команды в заметке: «Создан новый контакт Иван», «Добавили нового человека Марии»
+_CREATION_NOTE = re.compile(
+    r"^\s*(?:создан\w*|созда[лв]\w*|добавлен\w*|добавил\w*|завел\w*|заведен\w*)\s+"
+    r"(?:нов\w+\s+)?(?:контакт\w*|человек\w*|карточк\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def name_from_command(text: str) -> Optional[dict]:
+    """
+    Имя после слов «создай контакт», «новый контакт», «добавь человека» …
+    {"first_name": "Иван", "last_name": "Петров"} (всё после первого слова — фамилия) или None.
+    """
+    match = _COMMAND.search(text or "")
+    if match is None:
+        return None
+    rest = text[match.end():]
+    words: list[str] = []
+    for token in re.split(r"\s+", rest.strip()):
+        # Имя кончается запятой, точкой, цифрой, дефисом-разделителем или стоп-словом
+        word = _WORD.match(token)
+        if not word or word.group(0).lower() in _STOP or len(words) >= MAX_NAME_WORDS:
+            break
+        words.append(word.group(0))
+        if token[word.end():word.end() + 1] in {",", ";", ".", ":", "!", "?", "(", "—", "–"} or token != word.group(0):
+            break
+    if not words:
+        return None
+    # «Олег юрист Казань»: со второго слова — только с заглавной, если первое написано с заглавной
+    if words[0][0].isupper():
+        keep = [words[0]]
+        for word in words[1:]:
+            if not word[0].isupper():
+                break
+            keep.append(word)
+        words = keep
+    else:
+        words = [w.capitalize() for w in words[:2]]
+    return {"first_name": words[0], "last_name": " ".join(words[1:])}
+
+
+def is_creation_note(note: str) -> bool:
+    """Заметка — просто пересказ команды «создан новый контакт …»: она ничего не добавляет."""
+    return bool(_CREATION_NOTE.match(note or ""))

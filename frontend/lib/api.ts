@@ -796,6 +796,9 @@ export type CaptureAction = { index: number; error?: string } & (
   | { type: 'answer_question'; question_id: string; question: string; answer: string }
   | { type: 'add_question'; text: string }
   | { type: 'add_note'; text: string }
+  | { type: 'add_phone'; value: string }
+  | { type: 'add_email'; value: string }
+  | { type: 'create_contact'; name: string }
 );
 
 /** Как помощник искал: слова поиска, найденные контакты, шаги модели со временем. */
@@ -805,6 +808,8 @@ export interface JobTrace {
   terms?: string[];
   search?: string[];
   person?: { mention: string; first_name: string; last_name: string };
+  /** command — модель не нашла имя, оно взято из команды «создай контакт …» */
+  name_source?: 'command';
   /** search — нашлись карточки; recent — поиск пуст, модель видела последние контакты */
   source?: 'search' | 'recent';
   found?: { id: string; name: string }[];
