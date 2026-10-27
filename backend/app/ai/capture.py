@@ -246,12 +246,23 @@ async def _apply_action(db: AsyncIOMotorDatabase, contact_id: str, action: dict)
         raise ToolError("Неизвестное действие")
 
 
+def split_name(full_name: str) -> dict:
+    """«Иван  Петров» → {"first_name": "Иван", "last_name": "Петров"}; всё после первого слова — фамилия."""
+    first, _, last = " ".join(full_name.split()).partition(" ")
+    return {"first_name": first, "last_name": last}
+
+
 async def apply_plan(
-    db: AsyncIOMotorDatabase, plan: dict, selected: list[int], contact_id: Optional[str]
+    db: AsyncIOMotorDatabase,
+    plan: dict,
+    selected: list[int],
+    contact_id: Optional[str],
+    new_name: Optional[str] = None,
 ) -> dict:
     """
     Выполнить выбранные действия предпросмотра над карточкой contact_id
     (по умолчанию — найденной моделью; если её нет — создаётся новый контакт).
+    Имя нового контакта: new_name, введённое пользователем, иначе то, что нашла модель.
     """
     by_index = {a["index"]: a for a in plan.get("actions", [])}
     chosen = [by_index[i] for i in dict.fromkeys(selected) if i in by_index]
@@ -262,7 +273,7 @@ async def apply_plan(
     if target:
         await tools.get_contact(db, target)  # ToolError, если контакта нет в базе пользователя
     else:
-        name = plan.get("new_contact") or {}
+        name = split_name(new_name) if new_name and new_name.strip() else plan.get("new_contact") or {}
         created = await tools.create_contact(db, name.get("first_name", ""), name.get("last_name", ""))
         target = created.id
     results = []

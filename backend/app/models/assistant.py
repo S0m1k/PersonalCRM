@@ -34,6 +34,9 @@ class ApplyRequest(BaseModel):
     actions: list[int] = Field(..., min_length=1, max_length=50)
     # Другая карточка из кандидатов (или любая своя); None — найденная моделью / новый контакт
     contact_id: Optional[str] = None
+    # Имя нового контакта, введённое в предпросмотре (если модель не нашла имя или ошиблась).
+    # Учитывается только когда создаётся новый контакт
+    new_name: Optional[str] = Field(default=None, max_length=200)
 
 
 class JobOut(BaseModel):

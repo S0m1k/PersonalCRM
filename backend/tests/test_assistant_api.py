@@ -251,6 +251,87 @@ class TestCapturePreviewThenApply:
         assert "ГГГГ-ММ-ДД" in action["error"]
 
 
+def nameless_responder(schema_name, system, user):
+    """Модель не нашла в записи имени человека (например, «купил квартиру в Дубае»)."""
+    if schema_name == "person":
+        return {"mention": "", "first_name": "", "last_name": ""}
+    return petya_responder(schema_name, system, user)
+
+
+class TestNewContactName:
+    """Нового человека без имени в записи нельзя создать молча — имя вводит пользователь в предпросмотре."""
+
+    def _nameless_preview(self, client, anna, assistant, system_db) -> dict:
+        job = _capture(client, anna, text="Купил квартиру в Дубае, дочке пять лет")
+        _run(client, assistant, system_db, job["id"], llm=FakeLLM(nameless_responder))
+        return job
+
+    def test_preview_has_no_name_for_new_contact(self, client, anna, assistant, system_db):
+        job = self._nameless_preview(client, anna, assistant, system_db)
+
+        result = _job(client, anna, job["id"]).json()["result"]
+
+        assert result["contact_id"] is None
+        assert result["new_contact"] is None
+
+    def test_apply_without_any_name_is_422_and_stays_applicable(self, client, anna, assistant, system_db):
+        job = self._nameless_preview(client, anna, assistant, system_db)
+        url = f"/api/assistant/jobs/{job['id']}/apply"
+
+        first = client.post(url, json={"actions": [0]}, headers=anna)
+        retry = client.post(url, json={"actions": [0], "new_name": "Иван Петров"}, headers=anna)
+
+        assert first.status_code == 422
+        assert "имя" in first.json()["detail"].lower()
+        assert retry.status_code == 200, retry.text  # задача не «сгорела» после ошибки
+
+    def test_name_typed_by_user_creates_contact(self, client, anna, assistant, system_db):
+        job = self._nameless_preview(client, anna, assistant, system_db)
+
+        resp = client.post(
+            f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0], "new_name": "  Иван  Петров "}, headers=anna
+        )
+
+        assert resp.status_code == 200, resp.text
+        created = resp.json()["created_contact"]
+        assert created["name"] == "Иван Петров"
+        card = client.get(f"/api/contacts/{created['id']}", headers=anna).json()
+        assert (card["first_name"], card["last_name"]) == ("Иван", "Петров")
+        assert card["city"] == "Дубай"
+
+    def test_name_typed_by_user_overrides_model_guess(self, client, anna, assistant, system_db):
+        job = _capture(client, anna)
+        _run(client, assistant, system_db, job["id"])  # модель угадала «Пётр»
+
+        resp = client.post(
+            f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0], "new_name": "Пётр Смирнов"}, headers=anna
+        )
+
+        assert resp.json()["created_contact"]["name"] == "Пётр Смирнов"
+
+    def test_new_name_is_ignored_when_applying_to_existing_contact(self, client, anna, assistant, system_db):
+        petya = _contact(client, anna, first_name="Пётр", city="Москва")
+        job = _capture(client, anna)
+        _run(client, assistant, system_db, job["id"])
+
+        resp = client.post(
+            f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0], "new_name": "Кто-то Другой"}, headers=anna
+        )
+
+        assert resp.json()["created_contact"] is None
+        assert resp.json()["contact_id"] == petya["id"]
+        assert len(client.get("/api/contacts/", headers=anna).json()) == 1
+
+    def test_overlong_name_is_rejected(self, client, anna, assistant, system_db):
+        job = self._nameless_preview(client, anna, assistant, system_db)
+
+        resp = client.post(
+            f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0], "new_name": "Я" * 300}, headers=anna
+        )
+
+        assert resp.status_code == 422
+
+
 class TestCrossTenant:
     def test_other_user_cannot_see_cancel_or_apply(self, client, anna, boris, assistant, system_db):
         _contact(client, anna, first_name="Пётр")

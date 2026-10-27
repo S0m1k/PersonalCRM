@@ -110,7 +110,7 @@ async def apply_job(
     if not await assistant.store.lock_apply(job_id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Изменения уже применены")
     try:
-        outcome = await apply_plan(db, record["result"], data.actions, data.contact_id)
+        outcome = await apply_plan(db, record["result"], data.actions, data.contact_id, data.new_name)
     except ToolError as exc:
         await assistant.store.unlock_apply(job_id)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from None

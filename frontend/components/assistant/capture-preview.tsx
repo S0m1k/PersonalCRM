@@ -6,6 +6,7 @@ import { Check, CircleCheck, CircleHelp, NotebookPen, PenLine, UserPlus } from '
 import type { ApplyResult, CaptureAction, CaptureResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const NEW_CONTACT = '__new__';
 
@@ -46,7 +47,7 @@ type Props = {
   result: CaptureResult;
   applied: ApplyResult | null;
   busy: boolean;
-  onApply: (actions: number[], contactId: string | null) => void;
+  onApply: (actions: number[], contactId: string | null, newName?: string) => void;
   onDiscard: () => void;
 };
 
@@ -55,7 +56,11 @@ export function CapturePreview({ result, applied, busy, onApply, onDiscard }: Pr
   const valid = result.actions.filter((a) => !a.error);
   const [selected, setSelected] = useState<Set<number>>(() => new Set(valid.map((a) => a.index)));
   const [target, setTarget] = useState<string>(result.contact_id ?? (result.candidates.length ? '' : NEW_CONTACT));
-  const newName = [result.new_contact?.first_name, result.new_contact?.last_name].filter(Boolean).join(' ');
+  const foundName = [result.new_contact?.first_name, result.new_contact?.last_name].filter(Boolean).join(' ');
+  // Имя нового контакта правится прямо здесь: модель может не найти его в записи или ошибиться
+  const [typedName, setTypedName] = useState(foundName);
+  const isNew = target === NEW_CONTACT;
+  const newName = typedName.trim();
 
   function toggle(index: number) {
     setSelected((prev) => {
@@ -90,7 +95,7 @@ export function CapturePreview({ result, applied, busy, onApply, onDiscard }: Pr
     );
   }
 
-  const canApply = selected.size > 0 && target !== '' && !busy;
+  const canApply = selected.size > 0 && target !== '' && (!isNew || newName !== '') && !busy;
 
   return (
     <div className="flex flex-col gap-4">
@@ -105,10 +110,25 @@ export function CapturePreview({ result, applied, busy, onApply, onDiscard }: Pr
           ))}
           <TargetChip active={target === NEW_CONTACT} onClick={() => setTarget(NEW_CONTACT)}>
             <UserPlus className="size-3.5" />
-            Новый контакт{newName ? `: ${newName}` : ''}
+            Новый контакт{foundName ? `: ${foundName}` : ''}
           </TargetChip>
         </div>
         {target === '' && <p className="mt-1.5 text-sm text-muted">Нашлось несколько людей — выберите, к кому это.</p>}
+        {isNew && (
+          <label className="mt-3 flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted">
+              {foundName ? 'Имя нового контакта' : 'В записи нет имени — как назвать нового человека?'}
+            </span>
+            <Input
+              value={typedName}
+              onChange={(e) => setTypedName(e.target.value)}
+              placeholder="Имя и фамилия"
+              maxLength={200}
+              autoFocus={!foundName}
+              className="max-w-sm"
+            />
+          </label>
+        )}
       </fieldset>
 
       <ul className="flex flex-col divide-y divide-line rounded-md border border-line bg-surface">
@@ -143,7 +163,7 @@ export function CapturePreview({ result, applied, busy, onApply, onDiscard }: Pr
         <Button
           variant="primary"
           disabled={!canApply}
-          onClick={() => onApply([...selected], target === NEW_CONTACT ? null : target)}
+          onClick={() => onApply([...selected], isNew ? null : target, isNew ? newName : undefined)}
         >
           Применить {selected.size > 0 ? `(${selected.size})` : ''}
         </Button>

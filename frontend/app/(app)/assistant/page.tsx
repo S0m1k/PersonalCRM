@@ -113,11 +113,11 @@ export default function AssistantPage() {
     }
   }
 
-  async function handleApply(actions: number[], contactId: string | null) {
+  async function handleApply(actions: number[], contactId: string | null, newName?: string) {
     if (!jobId) return;
     setIsApplying(true);
     try {
-      const outcome = await applyCapture(jobId, actions, contactId);
+      const outcome = await applyCapture(jobId, actions, contactId, newName);
       setApplied(outcome);
       setText('');
       // Карточки, вопросы и счётчики на главной поменялись

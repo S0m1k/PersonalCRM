@@ -875,9 +875,14 @@ export function cancelAssistantJob(id: string): Promise<AssistantJob> {
   return apiFetch<AssistantJob>(assistantJobKey(id), { method: 'DELETE' });
 }
 
-export function applyCapture(id: string, actions: number[], contactId: string | null): Promise<ApplyResult> {
+export function applyCapture(
+  id: string,
+  actions: number[],
+  contactId: string | null,
+  newName?: string,
+): Promise<ApplyResult> {
   return apiFetch<ApplyResult>(`${assistantJobKey(id)}/apply`, {
     method: 'POST',
-    body: JSON.stringify({ actions, contact_id: contactId }),
+    body: JSON.stringify({ actions, contact_id: contactId, new_name: newName || null }),
   });
 }
