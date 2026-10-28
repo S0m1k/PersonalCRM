@@ -23,7 +23,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from ..repositories import contacts as contacts_repo
 from ..services import phones
 from . import tools
-from .commands import is_creation_note, name_from_command
+from .commands import is_creation_note, is_delete_command, name_from_command
 from .intent import looks_like_question
 from .llm import LLMProvider
 from .tools import ToolError
@@ -212,10 +212,26 @@ def _question_result(text: str) -> dict:
     }
 
 
+def _delete_result(text: str) -> dict:
+    """Помощник удалять не умеет: ничего не создаём и не записываем, интерфейс объяснит, где это делается."""
+    return {
+        "text": text,
+        "contact_id": None,
+        "candidates": [],
+        "new_contact": None,
+        "actions": [],
+        "suggest_ask": False,
+        "unsupported": "delete",
+        "trace": {"intent": "delete"},
+    }
+
+
 async def run_capture(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict) -> dict:
     text = str(payload.get("text", "")).strip()
     if not payload.get("force") and looks_like_question(text):
         return _question_result(text)
+    if not payload.get("force") and is_delete_command(text):
+        return _delete_result(text)
     person = await llm.complete_json(PERSON_PROMPT, text, PERSON_SCHEMA, "person")
     name_source = "model"
     if not any(str(person.get(k, "")).strip() for k in ("mention", "first_name", "last_name")):

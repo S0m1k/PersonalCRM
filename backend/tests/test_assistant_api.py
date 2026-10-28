@@ -479,6 +479,53 @@ class TestCreateContactCommand:
         assert result["trace"].get("name_source") != "command"
 
 
+class TestDeleteCommand:
+    """«Удали контакт Иван Петров» не должно ни создавать контакт, ни писать заметку «Удалён контакт»."""
+
+    DELETE_TEXT = "Удали контакт Иван Петров"
+
+    def _preview(self, client, anna, assistant, system_db, llm, **body) -> dict:
+        resp = client.post("/api/assistant/capture", json={"text": self.DELETE_TEXT, **body}, headers=anna)
+        assert resp.status_code == 202, resp.text
+        job = resp.json()
+        _run(client, assistant, system_db, job["id"], llm=llm)
+        return _job(client, anna, job["id"]).json()["result"]
+
+    def test_delete_command_is_explained_without_calling_the_model(self, client, anna, assistant, system_db):
+        llm = FakeLLM(petya_responder)
+
+        result = self._preview(client, anna, assistant, system_db, llm)
+
+        assert result["unsupported"] == "delete"
+        assert result["actions"] == []
+        assert result["new_contact"] is None
+        assert result["trace"]["intent"] == "delete"
+        assert llm.calls == []
+
+    def test_nothing_is_created_or_changed(self, client, anna, assistant, system_db):
+        ivan = _contact(client, anna, first_name="Иван", last_name="Петров")
+
+        self._preview(client, anna, assistant, system_db, FakeLLM(petya_responder))
+
+        contacts = client.get("/api/contacts/", headers=anna).json()
+        assert [c["id"] for c in contacts] == [ivan["id"]]
+        assert contacts[0]["notes"] == ""
+
+    def test_force_records_it_as_a_normal_note(self, client, anna, assistant, system_db):
+        llm = FakeLLM(petya_responder)
+
+        result = self._preview(client, anna, assistant, system_db, llm, force=True)
+
+        assert result.get("unsupported") is None
+        assert llm.calls  # «Всё равно записать» — обычный разбор
+
+    def test_ordinary_capture_has_no_unsupported_flag(self, client, anna, assistant, system_db):
+        job = _capture(client, anna)
+        _run(client, assistant, system_db, job["id"])
+
+        assert "unsupported" not in _job(client, anna, job["id"]).json()["result"]
+
+
 class TestCrossTenant:
     def test_other_user_cannot_see_cancel_or_apply(self, client, anna, boris, assistant, system_db):
         _contact(client, anna, first_name="Пётр")

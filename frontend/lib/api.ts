@@ -803,7 +803,7 @@ export type CaptureAction = { index: number; error?: string } & (
 
 /** Как помощник искал: слова поиска, найденные контакты, шаги модели со временем. */
 export interface JobTrace {
-  intent?: 'capture' | 'question';
+  intent?: 'capture' | 'question' | 'delete';
   /** «Спросить»: слова поиска; «Записать»: номера и почта из записи */
   terms?: string[];
   search?: string[];
@@ -826,6 +826,8 @@ export interface CaptureResult {
   actions: CaptureAction[];
   /** Запись похожа на вопрос: модель не вызывалась, интерфейс предлагает «Спросить» */
   suggest_ask?: boolean;
+  /** delete — запись была командой удаления: помощник удалять не умеет, ничего не создано */
+  unsupported?: 'delete';
   trace?: JobTrace;
 }
 

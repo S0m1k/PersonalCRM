@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.ai.commands import is_creation_note, name_from_command
+from app.ai.commands import is_creation_note, is_delete_command, name_from_command
 
 
 class TestNameFromCommand:
@@ -80,3 +80,41 @@ class TestCreationNote:
     )
     def test_real_notes_are_kept(self, note):
         assert not is_creation_note(note)
+
+
+class TestDeleteCommand:
+    """Помощник не умеет удалять: такую команду нельзя превращать в заметку и новый контакт."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Удали контакт Иван Петров",
+            "удали контакт иван петров",
+            "Удалить Ивана Петрова из контактов",
+            "Убери контакт Мария Сидорова",
+            "Сотри контакт Олег",
+            "Пожалуйста, удали карточку Анны",
+            "А удали человека Иван",
+            "Удали из контактов Петю",
+            "Удалите клиента Сергей Титов",
+            "Стереть контакт Анна",
+        ],
+    )
+    def test_delete_commands_are_detected(self, text):
+        assert is_delete_command(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Удалил контакт Иван, он дублировался",
+            "Встретил Петю, удалю его из рассылки",
+            "Создай контакт Иван Петров",
+            "Удали файл договор",
+            "Убери из заметок старый адрес",
+            "Познакомился с Алексеем на выставке",
+            "Купил квартиру в Дубае, дочке пять лет",
+            "",
+        ],
+    )
+    def test_notes_and_other_commands_are_not_delete(self, text):
+        assert not is_delete_command(text)
