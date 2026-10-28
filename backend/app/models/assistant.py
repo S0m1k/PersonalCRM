@@ -63,6 +63,8 @@ class JobOut(BaseModel):
 class ApplyResult(BaseModel):
     contact_id: str
     created_contact: Optional[dict[str, Any]] = None
+    # Помощник удалил контакт (он в корзине): {id, name}
+    deleted_contact: Optional[dict[str, Any]] = None
     results: list[dict[str, Any]]
 
 

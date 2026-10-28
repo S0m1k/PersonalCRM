@@ -8,15 +8,17 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from ..models.contact import ContactCreate, ContactOut, ContactUpdate, CustomField, Email, Phone
 from ..models.question import QuestionCreate, QuestionOut, QuestionUpdate
 from ..models.template import FieldDef
 from ..repositories import contacts as contacts_repo
+from ..repositories import events as events_repo
 from ..repositories import questions as questions_repo
 from ..repositories import templates as templates_repo
 from ..services import phones
@@ -268,6 +270,54 @@ async def update_fields(db: AsyncIOMotorDatabase, contact_id: str, changes: dict
     if updated is None:
         raise ToolError("Контакт не найден")
     return updated
+
+
+def _fold_name(value: str) -> str:
+    return value.lower().replace("ё", "е").strip()
+
+
+def _name_word_matches(token: str, word: str) -> bool:
+    """Слово из карточки и слово из запроса: равны или отличаются падежным окончанием («Иван» ~ «Ивана»)."""
+    if token == word:
+        return True
+    short, long_ = sorted((token, word), key=len)
+    return len(short) >= 3 and long_.startswith(short) and len(long_) - len(short) <= 3
+
+
+def name_matches(contact_name: str, first: str, last: str = "", mention: str = "") -> bool:
+    """
+    Подходит ли карточка под имя из команды. Сверяем только имя и фамилию карточки: поиск по заметкам,
+    компании и т.п. для удаления слишком широк — чужая карточка не должна попасть под удаление.
+    Имя сравнивается и по семейству форм (Петя ~ Пётр).
+    """
+    tokens = _fold_name(contact_name).split()
+    first_options = {_fold_name(n) for n in (first, mention) if n.strip()}
+    for option in list(first_options):
+        first_options |= {_fold_name(v) for v in name_variants(option)}
+    if not first_options and not last.strip():
+        return False
+    if first_options and not any(_name_word_matches(t, o) for t in tokens for o in first_options):
+        return False
+    return not last.strip() or any(_name_word_matches(t, _fold_name(last)) for t in tokens)
+
+
+async def delete_contact(db: AsyncIOMotorDatabase, contact_id: str) -> dict:
+    """
+    Контакт — в корзину (contacts_trash), как при удалении с телефона: случайное удаление можно вернуть.
+    Вопросы удаляются, встречи отвязываются; вложения остаются и вернутся вместе с контактом.
+    """
+    contact = await _require_contact(db, contact_id)
+    full = await db[contacts_repo.COLLECTION].find_one({"_id": ObjectId(contact_id)})
+    if full is None:
+        raise ToolError("Контакт не найден")
+    trashed = {k: v for k, v in full.items() if k != "_id"}
+    await db["contacts_trash"].insert_one(
+        {**trashed, "contact_id": contact_id, "deleted_at": datetime.now(timezone.utc), "deleted_via": "assistant"}
+    )
+    await contacts_repo.delete_contact(db, contact_id)
+    await questions_repo.delete_for_contact(db, contact_id)
+    await events_repo.unlink_contact(db, contact_id)
+    return {"id": contact_id, "name": full_name(contact)}
 
 
 async def add_phone(db: AsyncIOMotorDatabase, contact_id: str, value: str) -> ContactOut:

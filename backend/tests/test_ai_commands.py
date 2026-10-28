@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.ai.commands import is_creation_note, is_delete_command, name_from_command
+from app.ai.commands import delete_target_name, is_creation_note, is_delete_command, name_from_command
 
 
 class TestNameFromCommand:
@@ -118,3 +118,23 @@ class TestDeleteCommand:
     )
     def test_notes_and_other_commands_are_not_delete(self, text):
         assert not is_delete_command(text)
+
+
+class TestDeleteTargetName:
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("Удали контакт Иван Петров", ("Иван", "Петров")),
+            ("Удалить Ивана Петрова из контактов", ("Ивана", "Петрова")),
+            ("Убери контакт Мария Сидорова, он дублируется", ("Мария", "Сидорова")),
+            ("Удали из контактов Петю", ("Петю", "")),
+            ("Пожалуйста, удали карточку Анны", ("Анны", "")),
+            ("удали контакт иван петров", ("Иван", "Петров")),
+        ],
+    )
+    def test_name_in_delete_command(self, text, expected):
+        assert delete_target_name(text) == {"first_name": expected[0], "last_name": expected[1]}
+
+    @pytest.mark.parametrize("text", ["Удали контакт", "Удали из контактов", "Создай контакт Иван Петров", ""])
+    def test_no_name_means_none(self, text):
+        assert delete_target_name(text) is None

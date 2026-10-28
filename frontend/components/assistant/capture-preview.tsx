@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { AtSign, Check, CircleCheck, CircleHelp, NotebookPen, PenLine, Phone, UserPlus } from 'lucide-react';
+import { AtSign, Check, CircleCheck, CircleHelp, NotebookPen, PenLine, Phone, Trash2, UserPlus } from 'lucide-react';
 import type { ApplyResult, CaptureAction, CaptureResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -54,6 +54,7 @@ const ACTION_META: Record<CaptureAction['type'], { icon: typeof PenLine; label: 
   add_phone: { icon: Phone, label: 'Телефон' },
   add_email: { icon: AtSign, label: 'Почта' },
   create_contact: { icon: UserPlus, label: 'Контакт' },
+  delete_contact: { icon: Trash2, label: 'Удалить' },
 };
 
 type Props = {

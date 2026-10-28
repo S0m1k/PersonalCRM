@@ -799,6 +799,7 @@ export type CaptureAction = { index: number; error?: string } & (
   | { type: 'add_phone'; value: string }
   | { type: 'add_email'; value: string }
   | { type: 'create_contact'; name: string }
+  | { type: 'delete_contact'; name: string }
 );
 
 /** Как помощник искал: слова поиска, найденные контакты, шаги модели со временем. */
@@ -826,8 +827,10 @@ export interface CaptureResult {
   actions: CaptureAction[];
   /** Запись похожа на вопрос: модель не вызывалась, интерфейс предлагает «Спросить» */
   suggest_ask?: boolean;
-  /** delete — запись была командой удаления: помощник удалять не умеет, ничего не создано */
-  unsupported?: 'delete';
+  /** delete — запись была командой удаления: показываем найденные карточки и просим подтверждение */
+  mode?: 'delete';
+  /** Имя из команды удаления (для сообщения «не нашёл») */
+  target_name?: string;
   trace?: JobTrace;
 }
 
@@ -853,6 +856,7 @@ export interface AssistantJob<R = CaptureResult | AskResult> {
 export interface ApplyResult {
   contact_id: string;
   created_contact: ContactRef | null;
+  deleted_contact?: { id: string; name: string } | null;
   results: { index: number; ok: boolean; error?: string }[];
 }
 

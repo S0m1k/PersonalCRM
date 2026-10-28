@@ -43,7 +43,11 @@ def name_from_command(text: str) -> Optional[dict]:
     match = _COMMAND.search(text or "")
     if match is None:
         return None
-    rest = text[match.end():]
+    return _name_from_rest(text[match.end():])
+
+
+def _name_from_rest(rest: str) -> Optional[dict]:
+    """Имя из начала строки: 1–3 слова до запятой, цифры или стоп-слова."""
     words: list[str] = []
     for token in re.split(r"\s+", rest.strip()):
         # Имя кончается запятой, точкой, цифрой, дефисом-разделителем или стоп-словом
@@ -88,3 +92,15 @@ _DELETE_COMMAND = re.compile(
 def is_delete_command(text: str) -> bool:
     """«Удали контакт Иван Петров» — помощник удалять не умеет, и такую фразу нельзя записывать как заметку."""
     return bool(_DELETE_COMMAND.match(text or ""))
+
+
+def delete_target_name(text: str) -> Optional[dict]:
+    """
+    Чьё имя в команде удаления: «Удали контакт Иван Петров» → Иван / Петров,
+    «Удалить Ивана Петрова из контактов» → Ивана / Петрова (как написано, без склонения).
+    """
+    match = _DELETE_COMMAND.match(text or "")
+    if match is None:
+        return None
+    rest = re.sub(r"(?<!\w)" + _CONTACT_WORD + r"(?!\w)", " ", text[match.end():], flags=re.IGNORECASE)
+    return _name_from_rest(rest.strip(" ,:;-—–"))

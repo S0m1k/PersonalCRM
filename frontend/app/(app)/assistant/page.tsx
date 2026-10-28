@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { CapturePreview } from '@/components/assistant/capture-preview';
 import { JobStatus, isPending } from '@/components/assistant/job-status';
-import { DeleteHint } from '@/components/assistant/delete-hint';
+import { DeletePreview } from '@/components/assistant/delete-preview';
 import { QuestionHint } from '@/components/assistant/question-hint';
 import { TraceDetails } from '@/components/assistant/trace-details';
 
@@ -192,8 +192,15 @@ export default function AssistantPage() {
               onAsk={() => void handleAskInstead()}
               onRecordAnyway={() => void submit('capture', text.trim(), true)}
             />
-          ) : (job.result as CaptureResult).unsupported === 'delete' ? (
-            <DeleteHint busy={busy} onRecordAnyway={() => void submit('capture', text.trim(), true)} />
+          ) : (job.result as CaptureResult).mode === 'delete' ? (
+            <DeletePreview
+              key={job.id}
+              result={job.result as CaptureResult}
+              applied={applied}
+              busy={isApplying}
+              onApply={handleApply}
+              onDiscard={reset}
+            />
           ) : (
             <>
               <CapturePreview

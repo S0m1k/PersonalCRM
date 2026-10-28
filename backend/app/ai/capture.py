@@ -23,7 +23,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from ..repositories import contacts as contacts_repo
 from ..services import phones
 from . import tools
-from .commands import is_creation_note, is_delete_command, name_from_command
+from .commands import delete_target_name, is_creation_note, is_delete_command, name_from_command
 from .intent import looks_like_question
 from .llm import LLMProvider
 from .tools import ToolError
@@ -212,17 +212,34 @@ def _question_result(text: str) -> dict:
     }
 
 
-def _delete_result(text: str) -> dict:
-    """Помощник удалять не умеет: ничего не создаём и не записываем, интерфейс объяснит, где это делается."""
+async def _delete_result(db: AsyncIOMotorDatabase, llm: LLMProvider, text: str) -> dict:
+    """
+    «Удали контакт Иван Петров»: ищем карточку по имени и предлагаем удалить — только после подтверждения.
+    Сверяем лишь имя и фамилию карточки (заметки и компания слишком широки для удаления).
+    """
+    person = await llm.complete_json(PERSON_PROMPT, text, PERSON_SCHEMA, "person")
+    names = {k: str(person.get(k, "")).strip() for k in ("mention", "first_name", "last_name")}
+    if not any(names.values()):
+        named = delete_target_name(text)
+        if named:
+            names = {"mention": named["first_name"], **named}
+    first, last = names["first_name"] or names["mention"], names["last_name"]
+    found = await find_candidates(db, names, "") if any(names.values()) else []
+    candidates = [c for c in found if tools.name_matches(c["name"], first, last, names["mention"])]
+    target = " ".join(p for p in (first, last) if p)
+    single = candidates[0] if len(candidates) == 1 else None
     return {
         "text": text,
-        "contact_id": None,
-        "candidates": [],
+        "mode": "delete",
+        "contact_id": single["id"] if single else None,
+        "candidates": candidates,
         "new_contact": None,
-        "actions": [],
+        "target_name": target,
+        "actions": [{"type": "delete_contact", "name": single["name"] if single else target, "index": 0}]
+        if candidates
+        else [],
         "suggest_ask": False,
-        "unsupported": "delete",
-        "trace": {"intent": "delete"},
+        "trace": {"intent": "delete", "person": names},
     }
 
 
@@ -231,7 +248,7 @@ async def run_capture(db: AsyncIOMotorDatabase, llm: LLMProvider, payload: dict)
     if not payload.get("force") and looks_like_question(text):
         return _question_result(text)
     if not payload.get("force") and is_delete_command(text):
-        return _delete_result(text)
+        return await _delete_result(db, llm, text)
     person = await llm.complete_json(PERSON_PROMPT, text, PERSON_SCHEMA, "person")
     name_source = "model"
     if not any(str(person.get(k, "")).strip() for k in ("mention", "first_name", "last_name")):
@@ -309,6 +326,24 @@ def split_name(full_name: str) -> dict:
     return {"first_name": first, "last_name": last}
 
 
+async def _apply_delete(
+    db: AsyncIOMotorDatabase, plan: dict, chosen: list[dict], contact_id: Optional[str]
+) -> dict:
+    """Удалить подтверждённую карточку — только из тех, что показал предпросмотр."""
+    target = contact_id or plan.get("contact_id")
+    if not target:
+        raise ToolError("Выберите, какой контакт удалить")
+    if target not in {c["id"] for c in plan.get("candidates", [])}:
+        raise ToolError("Можно удалить только контакт из найденных")
+    deleted = await tools.delete_contact(db, target)
+    return {
+        "contact_id": target,
+        "created_contact": None,
+        "deleted_contact": deleted,
+        "results": [{"index": chosen[0]["index"], "ok": True}],
+    }
+
+
 async def apply_plan(
     db: AsyncIOMotorDatabase,
     plan: dict,
@@ -325,6 +360,8 @@ async def apply_plan(
     chosen = [by_index[i] for i in dict.fromkeys(selected) if i in by_index]
     if not chosen:
         raise ToolError("Не выбрано ни одного изменения")
+    if plan.get("mode") == "delete":
+        return await _apply_delete(db, plan, chosen, contact_id)
     target = contact_id or plan.get("contact_id")
     created = None
     if target:

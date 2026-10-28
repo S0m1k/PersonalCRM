@@ -479,51 +479,161 @@ class TestCreateContactCommand:
         assert result["trace"].get("name_source") != "command"
 
 
-class TestDeleteCommand:
-    """«Удали контакт Иван Петров» не должно ни создавать контакт, ни писать заметку «Удалён контакт»."""
+def person_responder(first: str, last: str = "", mention: str = ""):
+    """Модель вернула одного человека (имя в именительном падеже), как в «Удали контакт Иван Петров»."""
 
-    DELETE_TEXT = "Удали контакт Иван Петров"
+    def responder(schema_name, system, user):
+        if schema_name == "person":
+            return {"mention": mention or first, "first_name": first, "last_name": last}
+        raise AssertionError(f"удаление не должно вызывать схему {schema_name}")
 
-    def _preview(self, client, anna, assistant, system_db, llm, **body) -> dict:
-        resp = client.post("/api/assistant/capture", json={"text": self.DELETE_TEXT, **body}, headers=anna)
+    return responder
+
+
+class TestDeleteContact:
+    """«Удали контакт Иван Петров»: помощник находит карточку, показывает подтверждение и только после него удаляет."""
+
+    def _preview(self, client, anna, assistant, system_db, text="Удали контакт Иван Петров", responder=None, **body):
+        resp = client.post("/api/assistant/capture", json={"text": text, **body}, headers=anna)
         assert resp.status_code == 202, resp.text
         job = resp.json()
-        _run(client, assistant, system_db, job["id"], llm=llm)
-        return _job(client, anna, job["id"]).json()["result"]
+        _run(client, assistant, system_db, job["id"], llm=FakeLLM(responder or person_responder("Иван", "Петров")))
+        return job, _job(client, anna, job["id"]).json()["result"]
 
-    def test_delete_command_is_explained_without_calling_the_model(self, client, anna, assistant, system_db):
-        llm = FakeLLM(petya_responder)
+    def _tenant(self, client, system_db, email="anna@example.com"):
+        user = client.portal.call(system_db["users"].find_one, {"email": email})
+        return system_db.client[user["db_name"]]
 
-        result = self._preview(client, anna, assistant, system_db, llm)
-
-        assert result["unsupported"] == "delete"
-        assert result["actions"] == []
-        assert result["new_contact"] is None
-        assert result["trace"]["intent"] == "delete"
-        assert llm.calls == []
-
-    def test_nothing_is_created_or_changed(self, client, anna, assistant, system_db):
+    def test_preview_offers_the_found_card_and_changes_nothing(self, client, anna, assistant, system_db):
         ivan = _contact(client, anna, first_name="Иван", last_name="Петров")
 
-        self._preview(client, anna, assistant, system_db, FakeLLM(petya_responder))
+        _, result = self._preview(client, anna, assistant, system_db)
 
-        contacts = client.get("/api/contacts/", headers=anna).json()
-        assert [c["id"] for c in contacts] == [ivan["id"]]
-        assert contacts[0]["notes"] == ""
+        assert result["mode"] == "delete"
+        assert result["contact_id"] == ivan["id"]
+        assert [c["id"] for c in result["candidates"]] == [ivan["id"]]
+        assert [(a["type"], a["name"]) for a in result["actions"]] == [("delete_contact", "Иван Петров")]
+        assert result["new_contact"] is None
+        assert client.get(f"/api/contacts/{ivan['id']}", headers=anna).status_code == 200
+
+    def test_apply_moves_the_contact_to_trash(self, client, anna, assistant, system_db):
+        ivan = _contact(client, anna, first_name="Иван", last_name="Петров")
+        client.post("/api/questions", json={"contact_id": ivan["id"], "text": "Как дела?"}, headers=anna)
+        job, _ = self._preview(client, anna, assistant, system_db)
+
+        resp = client.post(f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0]}, headers=anna)
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["deleted_contact"] == {"id": ivan["id"], "name": "Иван Петров"}
+        assert client.get(f"/api/contacts/{ivan['id']}", headers=anna).status_code == 404
+        assert client.get("/api/questions", headers=anna).json() == []
+        trashed = client.portal.call(
+            self._tenant(client, system_db)["contacts_trash"].find_one, {"contact_id": ivan["id"]}
+        )
+        assert trashed["first_name"] == "Иван" and trashed["deleted_via"] == "assistant"
+        assert _job(client, anna, job["id"]).json()["status"] == "applied"
+
+    def test_declined_form_of_the_name_is_found(self, client, anna, assistant, system_db):
+        ivan = _contact(client, anna, first_name="Иван", last_name="Петров")
+
+        _, result = self._preview(
+            client, anna, assistant, system_db, text="Удалить Ивана Петрова из контактов",
+            responder=person_responder("Иван", "Петров", mention="Ивана"),
+        )
+
+        assert [c["id"] for c in result["candidates"]] == [ivan["id"]]
+
+    def test_name_is_taken_from_the_command_when_model_returns_nobody(self, client, anna, assistant, system_db):
+        ivan = _contact(client, anna, first_name="Иван", last_name="Петров")
+
+        _, result = self._preview(client, anna, assistant, system_db, responder=person_responder("", ""))
+
+        assert [c["id"] for c in result["candidates"]] == [ivan["id"]]
+
+    def test_only_the_card_name_counts_not_notes_or_company(self, client, anna, assistant, system_db):
+        _contact(client, anna, first_name="Пётр", last_name="Смирнов", notes="Иван Петров посоветовал юриста")
+        _contact(client, anna, first_name="Анна", last_name="Козлова", company="Иван Петров и партнёры")
+
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        assert result["candidates"] == []
+        assert result["actions"] == []
+        assert result["contact_id"] is None
+
+    def test_not_found_has_nothing_to_confirm(self, client, anna, assistant, system_db):
+        job, result = self._preview(client, anna, assistant, system_db)
+
+        assert result["mode"] == "delete" and result["candidates"] == [] and result["actions"] == []
+        apply = client.post(f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0]}, headers=anna)
+        assert apply.status_code == 422
+
+    def test_several_matches_require_a_choice(self, client, anna, assistant, system_db):
+        petrov = _contact(client, anna, first_name="Иван", last_name="Петров")
+        kozlov = _contact(client, anna, first_name="Иван", last_name="Козлов")
+        job, result = self._preview(client, anna, assistant, system_db, responder=person_responder("Иван", ""))
+        url = f"/api/assistant/jobs/{job['id']}/apply"
+
+        unchosen = client.post(url, json={"actions": [0]}, headers=anna)
+        chosen = client.post(url, json={"actions": [0], "contact_id": kozlov["id"]}, headers=anna)
+
+        assert result["contact_id"] is None
+        assert {c["id"] for c in result["candidates"]} == {petrov["id"], kozlov["id"]}
+        assert unchosen.status_code == 422 and "Выберите" in unchosen.json()["detail"]
+        assert chosen.status_code == 200, chosen.text
+        assert client.get(f"/api/contacts/{kozlov['id']}", headers=anna).status_code == 404
+        assert client.get(f"/api/contacts/{petrov['id']}", headers=anna).status_code == 200
+
+    def test_cannot_delete_a_card_that_was_not_offered(self, client, anna, assistant, system_db):
+        _contact(client, anna, first_name="Иван", last_name="Петров")
+        other = _contact(client, anna, first_name="Мария", last_name="Сидорова")
+        job, _ = self._preview(client, anna, assistant, system_db)
+
+        resp = client.post(
+            f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0], "contact_id": other["id"]}, headers=anna
+        )
+
+        assert resp.status_code == 422
+        assert client.get(f"/api/contacts/{other['id']}", headers=anna).status_code == 200
+
+    def test_events_are_unlinked_from_the_deleted_contact(self, client, anna, assistant, system_db):
+        ivan = _contact(client, anna, first_name="Иван", last_name="Петров")
+        event = client.post(
+            "/api/calendar/events",
+            json={"title": "Встреча", "start": "2026-11-03T10:00:00", "timezone": "UTC", "contact_ids": [ivan["id"]]},
+            headers=anna,
+        ).json()
+        job, _ = self._preview(client, anna, assistant, system_db)
+
+        client.post(f"/api/assistant/jobs/{job['id']}/apply", json={"actions": [0]}, headers=anna)
+
+        assert client.get(f"/api/calendar/events/{event['id']}", headers=anna).json()["contact_ids"] == []
+
+    def test_other_users_card_is_never_offered(self, client, anna, boris, assistant, system_db):
+        _contact(client, boris, first_name="Иван", last_name="Петров")
+
+        _, result = self._preview(client, anna, assistant, system_db)
+
+        assert result["candidates"] == []
 
     def test_force_records_it_as_a_normal_note(self, client, anna, assistant, system_db):
+        ivan = _contact(client, anna, first_name="Иван", last_name="Петров")
         llm = FakeLLM(petya_responder)
+        resp = client.post(
+            "/api/assistant/capture", json={"text": "Удали контакт Иван Петров", "force": True}, headers=anna
+        )
+        _run(client, assistant, system_db, resp.json()["id"], llm=llm)
 
-        result = self._preview(client, anna, assistant, system_db, llm, force=True)
+        result = _job(client, anna, resp.json()["id"]).json()["result"]
 
-        assert result.get("unsupported") is None
-        assert llm.calls  # «Всё равно записать» — обычный разбор
+        assert result.get("mode") != "delete"
+        assert llm.calls
+        assert client.get(f"/api/contacts/{ivan['id']}", headers=anna).status_code == 200
 
-    def test_ordinary_capture_has_no_unsupported_flag(self, client, anna, assistant, system_db):
+    def test_ordinary_capture_has_no_delete_mode(self, client, anna, assistant, system_db):
         job = _capture(client, anna)
         _run(client, assistant, system_db, job["id"])
 
-        assert "unsupported" not in _job(client, anna, job["id"]).json()["result"]
+        assert "mode" not in _job(client, anna, job["id"]).json()["result"]
 
 
 class TestCrossTenant:
