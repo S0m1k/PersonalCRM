@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -15,6 +15,8 @@ from ..models.user import User
 from ..models.contact import ContactCreate, ContactOut, ContactUpdate
 from ..repositories import contacts as repo
 from ..repositories import events as events_repo
+from ..repositories import groups as groups_repo
+from ..repositories import interactions as interactions_repo
 from ..repositories import questions as questions_repo
 from ..repositories import templates as templates_repo
 from ..services.attachments import delete_for_contact as delete_attachments
@@ -50,6 +52,19 @@ async def _normalize_fields(db: AsyncIOMotorDatabase, template_id: Optional[str]
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors) from None
 
 
+async def _check_groups(db: AsyncIOMotorDatabase, group_ids: Optional[list[str]]) -> None:
+    """422, если среди group_ids есть несуществующая группа."""
+    if not group_ids:
+        return
+    present = set(await groups_repo.existing_group_ids(db, group_ids))
+    missing = [g for g in group_ids if g not in present]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Группы не найдены: {', '.join(missing)}",
+        )
+
+
 # ---------------------------------------------------------------------------
 # Эндпоинты
 # ---------------------------------------------------------------------------
@@ -67,6 +82,7 @@ async def create_contact(
     _user: AuthDep,
 ) -> ContactOut:
     """Создать новый контакт. Требует авторизации."""
+    await _check_groups(db, data.group_ids)
     fields = await _normalize_fields(db, data.template_id, data.fields)
     return await repo.create_contact(db, data.model_copy(update={"fields": fields}))
 
@@ -83,12 +99,28 @@ async def list_contacts(
     category: Optional[str] = Query(default=None, description="Фильтр по категории"),
     priority: Optional[str] = Query(default=None, description="Фильтр по приоритету"),
     template_id: Optional[str] = Query(default=None, description="Фильтр по шаблону карточки"),
+    tag: Optional[str] = Query(default=None, description="Фильтр по тегу (без учёта регистра)"),
+    group_id: Optional[str] = Query(default=None, description="Фильтр по группе"),
+    has_location: Optional[bool] = Query(default=None, description="Только с координатами / только без"),
+    sort: Optional[Literal["last_interaction", "name", "created", "importance"]] = Query(
+        default=None, description="Сортировка (по умолчанию — недавно изменённые)"
+    ),
     skip: int = Query(default=0, ge=0, description="Пропустить N записей"),
     limit: int = Query(default=50, ge=1, le=200, description="Макс. записей в ответе"),
 ) -> list[ContactOut]:
     """Вернуть список контактов с опциональным поиском и фильтрацией."""
     return await repo.list_contacts(
-        db, q=q, category=category, priority=priority, template_id=template_id, skip=skip, limit=limit
+        db,
+        q=q,
+        category=category,
+        priority=priority,
+        template_id=template_id,
+        tag=tag,
+        group_id=group_id,
+        has_location=has_location,
+        sort=sort,
+        skip=skip,
+        limit=limit,
     )
 
 
@@ -124,6 +156,7 @@ async def update_contact(
     _user: AuthDep,
 ) -> ContactOut:
     """PATCH — обновить только переданные поля контакта."""
+    await _check_groups(db, data.group_ids)
     if data.template_id or data.fields is not None:
         current = await repo.get_contact_by_id(db, contact_id)
         if current is None:
@@ -164,3 +197,4 @@ async def delete_contact(
     await questions_repo.delete_for_contact(db, contact_id)
     await delete_attachments(db, contact_id)
     await events_repo.unlink_contact(db, contact_id)
+    await interactions_repo.unlink_contact(db, contact_id)
