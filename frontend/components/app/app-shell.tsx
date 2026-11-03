@@ -76,23 +76,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Sidebar onSearch={openSearch} className="hidden md:flex" />
 
             {/* Телефон: верхняя полоса + выезжающее меню */}
-            <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line/60 bg-sidebar px-2 md:hidden">
+            <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line bg-sidebar px-2 md:hidden">
               <DialogPrimitive.Root open={isNavOpen} onOpenChange={setIsNavOpen}>
                 <DialogPrimitive.Trigger className="rounded p-2 text-muted hover:bg-hover" aria-label="Меню">
                   <MenuIcon className="size-5" />
                 </DialogPrimitive.Trigger>
                 <DialogPrimitive.Portal>
-                  <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[rgb(15_15_15/0.4)] data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+                  <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-fg/40 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
                   <DialogPrimitive.Content
                     aria-describedby={undefined}
-                    className="fixed inset-y-0 left-0 z-50 shadow-pop data-[state=open]:animate-in data-[state=open]:slide-in-from-left"
+                    className="fixed inset-y-0 left-0 z-50 shadow-lg data-[state=open]:animate-in data-[state=open]:slide-in-from-left"
                   >
                     <DialogPrimitive.Title className="sr-only">Меню</DialogPrimitive.Title>
                     <Sidebar onSearch={() => { setIsNavOpen(false); openSearch(); }} />
                   </DialogPrimitive.Content>
                 </DialogPrimitive.Portal>
               </DialogPrimitive.Root>
-              <span className="flex-1 text-sm font-semibold">PersonalCRM</span>
+              <span className="flex-1 font-display text-xl font-semibold">PersonalCRM</span>
               <button type="button" onClick={openSearch} className="rounded p-2 text-muted hover:bg-hover" aria-label="Поиск">
                 <Search className="size-5" />
               </button>
