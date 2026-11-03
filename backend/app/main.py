@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 from .routers import attachments as attachments_router
 from .ai.jobs import close_assistant
 from .routers import assistant as assistant_router
+from .routers import assistant_chats as assistant_chats_router
 from .routers import auth as auth_router
 from .routers import calendar as calendar_router
 from .routers import contacts as contacts_router
@@ -140,6 +141,7 @@ app.include_router(carddav_router.router)
 
 # ИИ-помощник: /api/assistant/* — задачи в очереди arq, модель — в отдельном воркере (Sprint 6)
 app.include_router(assistant_router.router)
+app.include_router(assistant_chats_router.router)
 
 
 # ---------------------------------------------------------------------------

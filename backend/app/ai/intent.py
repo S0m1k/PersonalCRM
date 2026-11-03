@@ -34,6 +34,12 @@ def _clean(text: str) -> str:
     return phones.remove_from_text(_EMAIL.sub(" ", text)).strip()
 
 
+def starts_with_past_verb(text: str) -> bool:
+    """«Встретил Петю…», «созвонились…» — рассказ о сделанном, то есть запись, а не запрос."""
+    words = _WORD.findall(_clean(text).lower())
+    return bool(words) and bool(_PAST_VERB.match(words[0]))
+
+
 def looks_like_question(text: str) -> bool:
     cleaned = _clean(text)
     words = _WORD.findall(cleaned.lower())

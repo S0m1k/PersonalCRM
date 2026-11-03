@@ -27,6 +27,7 @@ from ..models.assistant import (
     JobOut,
 )
 from ..models.user import User
+from ..repositories import chats as chats_repo
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -105,14 +106,18 @@ async def apply_job(
     job_id: str, data: ApplyRequest, user: AuthDep, db: DbDep, assistant: AssistantDep
 ) -> ApplyResult:
     record = await _own_job(assistant, user, job_id)
-    if record["kind"] != "capture" or record["status"] != "done" or not record.get("result"):
+    # Предпросмотр захвата: результат задачи capture или поле capture задачи чата
+    plan = (record.get("result") or {}).get("capture") if record["kind"] == "chat" else record.get("result")
+    if record["kind"] not in ("capture", "chat") or record["status"] != "done" or not plan:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Нечего применять")
     if not await assistant.store.lock_apply(job_id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Изменения уже применены")
     try:
-        outcome = await apply_plan(db, record["result"], data.actions, data.contact_id, data.new_name)
+        outcome = await apply_plan(db, plan, data.actions, data.contact_id, data.new_name)
     except ToolError as exc:
         await assistant.store.unlock_apply(job_id)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from None
     await assistant.store.update(job_id, status="applied", applied=outcome)
+    if record["kind"] == "chat":
+        await chats_repo.mark_preview_applied(db, job_id, outcome)
     return ApplyResult(**outcome)

@@ -25,7 +25,7 @@ from ..config import Settings, settings
 
 logger = logging.getLogger(__name__)
 
-JobKind = Literal["capture", "ask"]
+JobKind = Literal["capture", "ask", "chat", "dossier"]
 JobStatus = Literal["queued", "running", "done", "failed", "cancelled", "applied"]
 ARQ_QUEUE = "arq:queue"
 RUN_JOB = "run_ai_job"

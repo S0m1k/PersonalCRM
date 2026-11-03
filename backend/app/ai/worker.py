@@ -26,6 +26,8 @@ from ..config import settings
 from ..repositories import users as users_repo
 from .ask import run_ask
 from .capture import run_capture
+from .chat import run_chat
+from .dossier import run_dossier
 from .jobs import RUN_JOB, JobStore
 from .llm import LLMError, LLMProvider, LLMUnavailableError, build_provider
 from .tools import ToolError
@@ -38,7 +40,7 @@ RETRY_DELAY_S = 10
 ARQ_TIMEOUT_MARGIN_S = 30
 
 Handler = Callable[[AsyncIOMotorDatabase, LLMProvider, dict], Awaitable[dict]]
-HANDLERS: dict[str, Handler] = {"capture": run_capture, "ask": run_ask}
+HANDLERS: dict[str, Handler] = {"capture": run_capture, "ask": run_ask, "chat": run_chat, "dossier": run_dossier}
 
 
 def _now_iso() -> str:
@@ -79,7 +81,9 @@ async def process_job(
         await store.update(job_id, status="running", started_at=_now_iso())
         db = tenant_db(system_db, user.db_name)
         try:
-            result = await asyncio.wait_for(handler(db, timed, record["input"]), timeout=timeout_s)
+            # job_id нужен чату: ответ помощника хранится с id задачи (предпросмотр применяется по нему)
+            payload = {**record["input"], "job_id": job_id}
+            result = await asyncio.wait_for(handler(db, timed, payload), timeout=timeout_s)
         except LLMUnavailableError as exc:
             if job_try < max_tries:
                 retrying = True

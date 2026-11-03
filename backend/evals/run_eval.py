@@ -22,7 +22,9 @@ from mongomock_motor import AsyncMongoMockClient
 
 from app.ai import tools
 from app.ai.ask import run_ask
+from app.ai.analytics import ANALYTICS_TOOLS, validate_params
 from app.ai.capture import run_capture
+from app.ai.chat import plan_calls, _plan
 from app.ai.llm import LLMProvider, build_provider
 from app.models.contact import ContactCreate
 from app.repositories import contacts as contacts_repo
@@ -90,6 +92,23 @@ def score_ask(expect: dict, result: dict, ids: dict[str, str]) -> list[tuple[str
     return checks
 
 
+async def plan_result(llm: LLMProvider, question: str) -> dict:
+    """Выбор инструментов аналитики: вызовы после проверки (как в чате) — имя и параметры."""
+    calls = []
+    for name, params in plan_calls(await _plan(llm, question, "")):
+        calls.append({"tool": name, "params": validate_params(ANALYTICS_TOOLS[name], params)})
+    return {"question": question, "calls": calls}
+
+
+def score_tools(expect: dict, result: dict) -> list[tuple[str, bool]]:
+    chosen = [c["tool"] for c in result["calls"]]
+    checks = [(f"инструменты {expect['tools']}", chosen == expect["tools"])]
+    for tool, want in expect.get("params", {}).items():
+        got = next((c["params"] for c in result["calls"] if c["tool"] == tool), {})
+        checks += [(f"{tool}.{k}={v}", got.get(k) == v) for k, v in want.items()]
+    return checks
+
+
 async def run_case(llm: LLMProvider, case: dict) -> dict:
     db = AsyncMongoMockClient()[f"eval_{case['name']}"]
     ids = await seed(db, case.get("contacts", []))
@@ -98,6 +117,9 @@ async def run_case(llm: LLMProvider, case: dict) -> dict:
         if case["kind"] == "capture":
             result = await run_capture(db, llm, {"text": case["text"]})
             checks = score_capture(case["expect"], result, ids)
+        elif case["kind"] == "tools":
+            result = await plan_result(llm, case["question"])
+            checks = score_tools(case["expect"], result)
         else:
             result = await run_ask(db, llm, {"question": case["question"]})
             checks = score_ask(case["expect"], result, ids)
