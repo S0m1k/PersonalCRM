@@ -22,6 +22,7 @@ from ..models.event import Attendee, EventCreate, EventOut, EventUpdate, as_utc,
 from ..models.sync import SyncConnection
 from ..models.user import User
 from ..repositories import events as repo
+from ..repositories import interactions as interactions_repo
 from ..repositories import sync as sync_repo
 from ..sync.calendar import connection_for, delete_remote, push_event
 from ..sync.calendar_common import CalendarAccessError
@@ -115,6 +116,7 @@ async def create_event(data: EventCreate, db: DbDep, _user: AuthDep) -> EventOut
             await repo.delete_event(db, str(doc["_id"]))
             raise _remote_error(conn, exc) from exc
         doc = await repo.update_event_doc(db, str(doc["_id"]), synced) or doc
+    await interactions_repo.recompute_last_interaction(db, doc.get("contact_ids") or [])
     return await repo.to_out(db, doc)
 
 
@@ -175,7 +177,12 @@ async def update_event(event_id: str, data: EventUpdate, db: DbDep, _user: AuthD
         except Exception as exc:  # noqa: BLE001
             raise _remote_error(conn, exc) from exc
     updated = await repo.update_event_doc(db, event_id, changes) if changes else doc
-    return await repo.to_out(db, updated or doc)
+    final = updated or doc
+    # last_interaction_at: событие могло сдвинуться или сменить участников
+    await interactions_repo.recompute_last_interaction(
+        db, [*(doc.get("contact_ids") or []), *(final.get("contact_ids") or [])]
+    )
+    return await repo.to_out(db, final)
 
 
 @router.post("/events/{event_id}/push", response_model=EventOut, summary="Записать событие в календарь провайдера")
@@ -218,3 +225,4 @@ async def delete_event(event_id: str, db: DbDep, _user: AuthDep) -> None:
         except Exception as exc:  # noqa: BLE001
             raise _remote_error(conn, exc) from exc
     await repo.delete_event(db, event_id)
+    await interactions_repo.recompute_last_interaction(db, doc.get("contact_ids") or [])

@@ -64,6 +64,28 @@ from app.auth import reset_legacy_check  # noqa: E402
 from app.storage import reset_storage  # noqa: E402
 
 
+@pytest.fixture
+def crm_client():
+    """Клиент с чистой in-memory базой для тестов данных Sprint 11 (группы, timeline, keep in touch…)."""
+    from fastapi.testclient import TestClient
+
+    from app.db import get_db
+    from app.main import app
+
+    system_db = AsyncMongoMockClient()["test_crm"]
+    app.dependency_overrides[get_db] = lambda: system_db
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def crm_auth(crm_client):
+    resp = crm_client.post("/api/auth/register", json={"email": "anna@example.com", "password": "password-123"})
+    assert resp.status_code == 201, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
 @pytest.fixture(autouse=True)
 def _fresh_legacy_admin_check():
     """У каждого теста своя in-memory база — перенос первого пользователя проверяется заново."""

@@ -96,6 +96,44 @@ class TestHomeApi:
 
         assert home["birthdays"][0]["days_until"] == 0
 
+    def test_sprint11_blocks(self, client, auth):
+        quiet = client.post(
+            "/api/contacts/", json={"first_name": "Тихий", "keep_in_touch": {"frequency_days": 3}}, headers=auth
+        ).json()
+        talked = client.post("/api/contacts/", json={"first_name": "Болтун", "tags": ["друг", "бег"]}, headers=auth).json()
+        client.post("/api/groups", json={"name": "Семья"}, headers=auth)
+        client.post("/api/interactions", json={"contact_ids": [talked["id"]], "title": "Кофе"}, headers=auth)
+        far = (date.today() + timedelta(days=60)).isoformat()
+
+        home = client.get("/api/home", params={"today": far}, headers=auth).json()
+
+        assert [i["contact_id"] for i in home["keep_in_touch_overdue"]] == [quiet["id"]]
+        assert home["keep_in_touch_overdue"][0]["days_overdue"] > 0
+        assert [(i["title"], i["contacts"]) for i in home["recent_interactions"]] == [
+            ("Кофе", [{"id": talked["id"], "name": "Болтун"}])
+        ]
+        assert home["counts"] == {"groups": 1, "tags": 2}
+        # прежние поля на месте
+        assert home["stats"] == {"contacts": 2, "open_questions": 0}
+
+    def test_keep_in_touch_overdue_is_capped_at_five(self, client, auth):
+        for i in range(7):
+            client.post("/api/contacts/", json={"first_name": f"П{i}", "keep_in_touch": {"frequency_days": 1}}, headers=auth)
+        far = (date.today() + timedelta(days=30)).isoformat()
+
+        home = client.get("/api/home", params={"today": far}, headers=auth).json()
+
+        assert len(home["keep_in_touch_overdue"]) == 5
+
+    def test_recent_interactions_are_limited_to_five_newest_first(self, client, auth):
+        c = client.post("/api/contacts/", json={"first_name": "А"}, headers=auth).json()
+        for i in range(7):
+            client.post("/api/interactions", json={"contact_ids": [c["id"]], "title": f"n{i}"}, headers=auth)
+
+        home = client.get("/api/home", headers=auth).json()
+
+        assert [i["title"] for i in home["recent_interactions"]] == ["n6", "n5", "n4", "n3", "n2"]
+
     def test_invalid_today_is_422(self, client, auth):
         assert client.get("/api/home", params={"today": "вчера"}, headers=auth).status_code == 422
 

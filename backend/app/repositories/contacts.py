@@ -21,6 +21,17 @@ from ..services import phones
 
 COLLECTION = "contacts"
 
+# Поля, которые можно очистить явным null в PATCH (у остальных None означает «не менять»)
+NULLABLE_FIELDS = ("first_met_at", "location", "importance", "closeness")
+
+# sort= в списке контактов → ключи сортировки Mongo
+SORTS: dict[str, list[tuple[str, int]]] = {
+    "last_interaction": [("last_interaction_at", -1), ("updated_at", -1)],
+    "name": [("first_name", 1), ("last_name", 1)],
+    "created": [("created_at", -1)],
+    "importance": [("importance", -1), ("updated_at", -1)],
+}
+
 
 def _utcnow() -> datetime:
     """Текущее UTC-время с таймзоной."""
@@ -97,6 +108,10 @@ async def list_contacts(
     category: Optional[str] = None,
     priority: Optional[str] = None,
     template_id: Optional[str] = None,
+    tag: Optional[str] = None,
+    group_id: Optional[str] = None,
+    has_location: Optional[bool] = None,
+    sort: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
 ) -> list[ContactOut]:
@@ -106,6 +121,8 @@ async def list_contacts(
     - q: поиск по имени, фамилии, компании, email, телефону (регексп, без учёта регистра;
       номер сравнивается по ключу из services/phones.py, формат записи не важен)
     - category / priority: точная фильтрация по полю
+    - tag (без учёта регистра) / group_id / has_location: фильтры Sprint 11
+    - sort: last_interaction | name | created | importance (по умолчанию — по updated_at)
     - skip / limit: пагинация
     """
     query: dict = {}
@@ -136,10 +153,21 @@ async def list_contacts(
     if template_id:
         query["template_id"] = template_id
 
+    if tag:
+        query["tags"] = {"$regex": f"^{re.escape(tag.strip())}$", "$options": "i"}
+
+    if group_id:
+        query["group_ids"] = group_id
+
+    if has_location is True:
+        query["location"] = {"$ne": None}
+    elif has_location is False:
+        query["location"] = None
+
     cursor = (
         db[COLLECTION]
         .find(query)
-        .sort("updated_at", -1)
+        .sort(SORTS.get(sort or "", [("updated_at", -1)]))
         .skip(skip)
         .limit(limit)
     )
@@ -163,6 +191,10 @@ async def update_contact(
 
     # Берём только явно переданные поля (exclude_none=True)
     changes = data.model_dump(mode="python", exclude_none=True)
+    # Явный null очищает только «обнуляемые» поля
+    for name in NULLABLE_FIELDS:
+        if name in data.model_fields_set and getattr(data, name) is None:
+            changes[name] = None
     if not changes:
         # Нечего обновлять — вернём текущее состояние
         return await get_contact_by_id(db, contact_id)
@@ -213,3 +245,70 @@ async def backfill_phone_keys(db: AsyncIOMotorDatabase) -> int:
         await db[COLLECTION].update_one({"_id": doc["_id"]}, {"$set": {"phones": phones}})
         fixed += 1
     return fixed
+
+
+# ---------------------------------------------------------------------------
+# Sprint 11: служебные операции над контактами
+# ---------------------------------------------------------------------------
+
+
+async def set_last_interaction(db: AsyncIOMotorDatabase, contact_id: str, value: Optional[datetime]) -> None:
+    """
+    Записать last_interaction_at. updated_at не трогаем: это служебное значение,
+    синхронизацию с провайдерами оно не запускает.
+    """
+    oid = _parse_oid(contact_id)
+    if oid is not None:
+        await db[COLLECTION].update_one({"_id": oid}, {"$set": {"last_interaction_at": value}})
+
+
+async def remove_group(db: AsyncIOMotorDatabase, group_id: str) -> int:
+    """Группа удалена — убрать её id у всех контактов. Возвращает число затронутых контактов."""
+    result = await db[COLLECTION].update_many({"group_ids": group_id}, {"$pull": {"group_ids": group_id}})
+    return result.modified_count
+
+
+async def count_by_group(db: AsyncIOMotorDatabase) -> dict[str, int]:
+    """{group_id: число контактов}."""
+    counts: dict[str, int] = {}
+    async for doc in db[COLLECTION].find({"group_ids.0": {"$exists": True}}, {"group_ids": 1}):
+        for gid in doc.get("group_ids") or []:
+            counts[gid] = counts.get(gid, 0) + 1
+    return counts
+
+
+async def tag_counts(db: AsyncIOMotorDatabase) -> list[dict]:
+    """Теги с числом контактов; регистр — самое частое написание, сортировка по числу и имени."""
+    by_key: dict[str, dict] = {}
+    async for doc in db[COLLECTION].find({"tags.0": {"$exists": True}}, {"tags": 1}):
+        for tag in doc.get("tags") or []:
+            entry = by_key.setdefault(tag.casefold(), {"spellings": {}, "count": 0})
+            entry["count"] += 1
+            entry["spellings"][tag] = entry["spellings"].get(tag, 0) + 1
+    result = [
+        {"tag": max(e["spellings"], key=lambda t: (e["spellings"][t], t)), "count": e["count"]}
+        for e in by_key.values()
+    ]
+    return sorted(result, key=lambda r: (-r["count"], r["tag"].casefold()))
+
+
+async def rewrite_tag(db: AsyncIOMotorDatabase, old: str, new: Optional[str]) -> int:
+    """
+    Переименовать / слить тег (new) или удалить его у всех контактов (new=None).
+    Совпадение без учёта регистра; результат нормализуется как обычный список тегов.
+    Возвращает число изменённых контактов.
+    """
+    from ..models.contact import normalize_labels
+
+    key = old.strip().casefold()
+    changed = 0
+    async for doc in db[COLLECTION].find({"tags.0": {"$exists": True}}, {"tags": 1}):
+        tags = doc.get("tags") or []
+        if not any(t.casefold() == key for t in tags):
+            continue
+        rewritten = [new if t.casefold() == key else t for t in tags]
+        if new is None:
+            rewritten = [t for t in tags if t.casefold() != key]
+        await db[COLLECTION].update_one({"_id": doc["_id"]}, {"$set": {"tags": normalize_labels(rewritten)}})
+        changed += 1
+    return changed
