@@ -26,7 +26,10 @@ import {
 import { clearToken, homeKey, meKey, type HomeSummary, type Me } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Kbd } from '@/components/ui/tag';
+import { SidebarViews } from './sidebar-views';
 import { ThemeToggle } from './theme';
+
+type SubItem = { href: string; label: string };
 
 type NavItem = {
   href: string;
@@ -34,7 +37,12 @@ type NavItem = {
   icon: LucideIcon;
   soon?: boolean;
   count?: number;
+  /** Подразделы — видны, когда активен раздел или один из подразделов */
+  children?: SubItem[];
 };
+
+const subItemClass =
+  'flex h-[28px] w-full items-center rounded-lg pl-[38px] pr-2 text-[13px] text-muted transition-colors hover:bg-line/60 hover:text-fg';
 
 const itemClass =
   'group flex h-[30px] w-full items-center gap-2.5 rounded-lg px-2 text-sm text-muted transition-colors hover:bg-line/60 hover:text-fg [&_svg]:size-[18px] [&_svg]:shrink-0';
@@ -68,12 +76,23 @@ export function Sidebar({ onSearch, className }: { onSearch: () => void; classNa
   const { data: me } = useSWR<Me>(meKey);
 
   const main: NavItem[] = [
-    { href: '/', label: 'Главная', icon: Home },
-    { href: '/contacts', label: 'Контакты', icon: Users, count: home?.stats.contacts },
+    { href: '/', label: 'Главная', icon: Home, children: [{ href: '/reminders', label: 'Напоминания' }] },
+    {
+      href: '/contacts',
+      label: 'Контакты',
+      icon: Users,
+      count: home?.stats.contacts,
+      children: [
+        { href: '/contacts/birthdays', label: 'Дни рождения' },
+        { href: '/contacts/quick-action', label: 'Быстрые действия' },
+        { href: '/contacts/merge', label: 'Слияние дублей' },
+        { href: '/contacts/locations', label: 'Места' },
+      ],
+    },
     { href: '/keep-in-touch', label: 'Keep in Touch', icon: BellRing },
     { href: '/timeline', label: 'Timeline', icon: History },
     { href: '/map', label: 'Карта', icon: MapPin },
-    { href: '/network', label: 'Сеть', icon: Network },
+    { href: '/network', label: 'Сеть', icon: Network, children: [{ href: '/network/insights', label: 'Инсайты' }] },
     { href: '/priority-map', label: 'Priority Map', icon: Grid2x2 },
     { href: '/goals', label: 'Цели', icon: Target },
     { href: '/assistant', label: 'Помощник', icon: MessageCircle },
@@ -88,6 +107,12 @@ export function Sidebar({ onSearch, className }: { onSearch: () => void; classNa
   ];
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+  const isExact = (href: string) => pathname === href;
+  const isSectionOpen = (item: NavItem) =>
+    isActive(item.href) || (item.children ?? []).some((c) => pathname.startsWith(c.href));
+  /** Раздел подсвечен, только если открыт он сам, а не подраздел */
+  const isItemActive = (item: NavItem) =>
+    isSectionOpen(item) && !(item.children ?? []).some((c) => pathname.startsWith(c.href));
 
   function handleLogout() {
     clearToken();
@@ -113,9 +138,23 @@ export function Sidebar({ onSearch, className }: { onSearch: () => void; classNa
 
       <nav className="mt-2 flex flex-col gap-px px-2" aria-label="Основные разделы">
         {main.map((item) => (
-          <NavLink key={item.href} item={item} isActive={isActive(item.href)} />
+          <div key={item.href} className="flex flex-col gap-px">
+            <NavLink item={item} isActive={isItemActive(item)} />
+            {item.children && isSectionOpen(item) &&
+              item.children.map((child) => (
+                <Link
+                  key={child.href}
+                  href={child.href}
+                  className={cn(subItemClass, isExact(child.href) && 'bg-line font-medium text-fg hover:bg-line')}
+                >
+                  <span className="truncate">{child.label}</span>
+                </Link>
+              ))}
+          </div>
         ))}
       </nav>
+
+      <SidebarViews />
 
       <div className="mt-6 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">Сервис</div>
       <nav className="flex flex-col gap-px px-2" aria-label="Сервис">
