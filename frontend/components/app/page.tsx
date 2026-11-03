@@ -28,7 +28,7 @@ export function PageHeader({ icon, title, description, actions }: HeaderProps) {
         </div>
       )}
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-title">{title}</h1>
+        <h1 className="font-display text-title">{title}</h1>
         {actions && <div className="flex items-center gap-1.5 pb-1">{actions}</div>}
       </div>
       {description && <p className="mt-2 max-w-prose text-[15px] text-muted">{description}</p>}
@@ -40,7 +40,7 @@ export function PageHeader({ icon, title, description, actions }: HeaderProps) {
 export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
     <div className="mb-2 flex items-center justify-between border-b border-line pb-1.5">
-      <h2 className="text-sm font-semibold text-muted">{children}</h2>
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">{children}</h2>
       {aside}
     </div>
   );
@@ -48,7 +48,7 @@ export function SectionTitle({ children, aside }: { children: ReactNode; aside?:
 
 export function EmptyState({ icon, title, children }: { icon: LucideIcon; title: ReactNode; children?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center rounded-md border border-dashed border-line px-6 py-10 text-center">
+    <div className="flex flex-col items-center rounded-2xl border border-dashed border-line-strong px-6 py-10 text-center">
       <div className="mb-3">
         <IconTile icon={icon} size="md" />
       </div>
