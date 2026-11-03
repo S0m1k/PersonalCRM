@@ -2,7 +2,7 @@ import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } fro
 import { cn } from '@/lib/utils';
 
 const base =
-  'w-full rounded bg-transparent text-sm text-fg placeholder:text-faint transition-shadow duration-100 disabled:opacity-50';
+  'w-full rounded-lg bg-transparent text-sm text-fg placeholder:text-faint transition-shadow duration-100 disabled:opacity-50';
 
 /** Обычное поле в рамке (формы, диалоги). */
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(
@@ -14,7 +14,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       ref={ref}
       className={cn(
         base,
-        'h-8 border border-line bg-surface px-2.5 shadow-[inset_0_1px_1px_rgb(0_0_0/0.03)] focus-visible:border-accent/60 focus-visible:ring-[3px] focus-visible:ring-accent/15',
+        'h-9 border border-line-strong bg-surface px-3 shadow-xs focus-visible:border-accent focus-visible:ring-[3px] focus-visible:ring-accent/20',
         className,
       )}
       {...props}
@@ -29,7 +29,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
         ref={ref}
         className={cn(
           base,
-          'min-h-20 resize-y border border-line bg-surface px-2.5 py-2 leading-relaxed focus-visible:border-accent/60 focus-visible:ring-[3px] focus-visible:ring-accent/15',
+          'min-h-20 resize-y border border-line-strong bg-surface px-3 py-2 leading-relaxed shadow-xs focus-visible:border-accent focus-visible:ring-[3px] focus-visible:ring-accent/20',
           className,
         )}
         {...props}
@@ -46,7 +46,7 @@ export const BareInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
   return (
     <input
       ref={ref}
-      className={cn(base, 'h-8 px-2 hover:bg-hover focus-visible:bg-surface focus-visible:shadow-pop', className)}
+      className={cn(base, 'h-8 px-2 hover:bg-hover focus-visible:bg-surface focus-visible:shadow-md', className)}
       {...props}
     />
   );

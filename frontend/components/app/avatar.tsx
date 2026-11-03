@@ -1,15 +1,13 @@
-import { cn, colorFor, initials } from '@/lib/utils';
+import { cn, initials } from '@/lib/utils';
 
-const BG: Record<string, string> = {
-  orange: 'bg-tag-orange',
-  yellow: 'bg-tag-yellow',
-  green: 'bg-tag-green',
-  blue: 'bg-tag-blue',
-  purple: 'bg-tag-purple',
-  pink: 'bg-tag-pink',
-  red: 'bg-tag-red',
-  brown: 'bg-tag-brown',
-};
+// Тёплые пастельные заливки: золото, олива, терракота, шалфей, коричневый
+const WARM_FILLS = ['bg-tag-yellow', 'bg-olive-200', 'bg-tag-orange', 'bg-tag-green', 'bg-tag-brown'];
+
+function fillFor(seed: string): string {
+  let hash = 0;
+  for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  return WARM_FILLS[Math.abs(hash) % WARM_FILLS.length];
+}
 
 type Props = {
   name: string;
@@ -30,8 +28,8 @@ export function Avatar({ name, size = 'md', className }: Props) {
     <span
       aria-hidden
       className={cn(
-        'inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold text-fg/80',
-        BG[colorFor(name)],
+        'inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold text-fg',
+        fillFor(name),
         SIZES[size],
         className,
       )}

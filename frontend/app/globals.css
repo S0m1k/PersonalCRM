@@ -3,24 +3,32 @@
 @tailwind utilities;
 
 /*
- * Палитра в духе Notion: тёплый нейтральный текст, едва заметные линии,
- * акцент — синий, теги — приглушённые фоны с тёмным текстом.
- * Значения — RGB-тройки, чтобы работала прозрачность Tailwind (bg-hover/50).
+ * Дизайн-система в духе Dex (docs/design/dex_tokens.md): тёплые нейтрали, slate в тёмной теме,
+ * свой акцент (пресеты .accent-* на <html>). Значения — RGB-тройки, чтобы работала прозрачность Tailwind.
  */
 :root {
-  --bg: 255 255 255;
-  --sidebar: 247 247 245;
+  --bg: 250 249 247; /* neutral-50 */
+  --sidebar: 244 242 238; /* neutral-100 */
   --surface: 255 255 255;
-  --fg: 55 53 47;
-  --muted: 120 119 116;
-  --faint: 172 171 169;
-  --line: 233 233 231;
-  --hover: 239 239 237;
-  --accent: 35 131 226;
-  --accent-fg: 255 255 255;
-  --danger: 212 76 71;
+  --fg: 23 21 19; /* neutral-950 */
+  --muted: 117 109 100; /* neutral-600 */
+  --faint: 152 144 130; /* neutral-500 */
+  --line: 232 228 222; /* neutral-200 */
+  --line-strong: 215 209 200; /* neutral-300 */
+  --hover: 240 237 232;
+  --danger: 210 40 57;
+  --success: 44 175 94;
+  --warning: 250 171 41;
 
-  --tag-gray: 227 226 224;
+  --accent: var(--accent-600);
+  --accent-hover: var(--accent-700);
+  --accent-fg: 255 255 255;
+
+  --olive-100: 239 235 218;
+  --olive-200: 224 216 184;
+  --olive-600: 126 117 66;
+
+  --tag-gray: 232 228 222;
   --tag-brown: 238 224 218;
   --tag-orange: 250 222 201;
   --tag-yellow: 253 236 200;
@@ -30,23 +38,49 @@
   --tag-pink: 245 224 233;
   --tag-red: 255 226 221;
 
+  --chart-1: var(--accent-500);
+  --chart-2: 44 175 94;
+  --chart-3: 250 171 41;
+  --chart-4: 224 74 85;
+  --chart-5: var(--olive-600);
+
+  --crm-cold: 185 177 167;
+  --crm-warm: 252 190 70;
+  --crm-strong: 44 175 94;
+  --crm-vip: var(--accent-600);
+  --crm-birthday: 224 74 85;
+  --crm-note: 250 171 41;
+  --crm-email: var(--accent-600);
+  --crm-meeting: 44 175 94;
+  --crm-group: var(--olive-600);
+
+  --shadow-rgb: 23 21 19;
   color-scheme: light;
 }
 
 .dark {
-  --bg: 25 25 25;
-  --sidebar: 32 32 32;
-  --surface: 37 37 37;
-  --fg: 225 225 223;
-  --muted: 155 155 151;
-  --faint: 105 105 102;
-  --line: 47 47 47;
-  --hover: 44 44 44;
-  --accent: 82 156 236;
-  --accent-fg: 255 255 255;
-  --danger: 230 91 85;
+  --bg: 15 20 29; /* slate-950 */
+  --sidebar: 20 26 38;
+  --surface: 26 33 48; /* slate-900 */
+  --fg: 241 244 248; /* slate-50 */
+  --muted: 168 179 199; /* slate-300 */
+  --faint: 128 141 166; /* slate-400 */
+  --line: 54 64 82; /* slate-700 */
+  --line-strong: 95 107 132; /* slate-500 */
+  --hover: 38 47 64; /* slate-800 */
+  --danger: 227 120 130;
+  --success: 122 205 154;
+  --warning: 252 202 120;
 
-  --tag-gray: 60 60 60;
+  --accent: var(--accent-400);
+  --accent-hover: var(--accent-300);
+  --accent-fg: 15 20 29;
+
+  --olive-100: 46 50 38;
+  --olive-200: 58 62 46;
+  --olive-600: 190 182 130;
+
+  --tag-gray: 54 64 82;
   --tag-brown: 74 50 40;
   --tag-orange: 92 59 35;
   --tag-yellow: 86 67 40;
@@ -56,14 +90,99 @@
   --tag-pink: 78 44 60;
   --tag-red: 82 46 42;
 
+  --chart-2: 122 205 154;
+  --chart-3: 252 202 120;
+  --chart-4: 227 120 130;
+
+  --crm-cold: 128 141 166;
+  --crm-warm: 252 202 120;
+  --crm-strong: 122 205 154;
+  --crm-vip: var(--accent-400);
+  --crm-birthday: 227 120 130;
+  --crm-note: 252 202 120;
+  --crm-email: var(--accent-400);
+  --crm-meeting: 122 205 154;
+
+  --shadow-rgb: 0 0 0;
   color-scheme: dark;
 }
 
+/* Пресеты акцента: шкала 50…950; «Индиго» — по умолчанию (без класса). */
+:root,
+.accent-indigo {
+  --accent-50: 240 240 253;
+  --accent-100: 222 222 248;
+  --accent-200: 198 198 242;
+  --accent-300: 166 166 234;
+  --accent-400: 128 128 224;
+  --accent-500: 91 91 214;
+  --accent-600: 74 72 196;
+  --accent-700: 64 62 161;
+  --accent-800: 54 52 125;
+  --accent-900: 43 41 90;
+  --accent-950: 33 31 54;
+}
+.accent-terracotta {
+  --accent-50: 253 241 236;
+  --accent-100: 248 224 215;
+  --accent-200: 240 200 186;
+  --accent-300: 231 169 147;
+  --accent-400: 219 132 103;
+  --accent-500: 208 96 58;
+  --accent-600: 180 77 43;
+  --accent-700: 149 66 38;
+  --accent-800: 117 55 33;
+  --accent-900: 86 43 29;
+  --accent-950: 54 32 24;
+}
+.accent-emerald {
+  --accent-50: 235 248 242;
+  --accent-100: 211 237 226;
+  --accent-200: 178 223 205;
+  --accent-300: 133 203 177;
+  --accent-400: 82 180 144;
+  --accent-500: 31 157 111;
+  --accent-600: 23 128 90;
+  --accent-700: 23 107 76;
+  --accent-800: 23 85 62;
+  --accent-900: 23 64 47;
+  --accent-950: 23 42 33;
+}
+.accent-plum {
+  --accent-50: 246 238 252;
+  --accent-100: 235 219 246;
+  --accent-200: 221 193 238;
+  --accent-300: 201 158 227;
+  --accent-400: 178 117 215;
+  --accent-500: 155 77 202;
+  --accent-600: 130 57 176;
+  --accent-700: 109 50 145;
+  --accent-800: 87 43 113;
+  --accent-900: 66 35 82;
+  --accent-950: 44 28 50;
+}
+.accent-dex {
+  --accent-50: 238 243 255;
+  --accent-100: 219 228 255;
+  --accent-200: 193 209 255;
+  --accent-300: 157 182 255;
+  --accent-400: 117 152 255;
+  --accent-500: 76 121 255;
+  --accent-600: 54 94 255;
+  --accent-700: 48 79 208;
+  --accent-800: 42 65 161;
+  --accent-900: 35 50 113;
+  --accent-950: 29 36 66;
+}
+
 @layer base {
+  html {
+    --font-serif: var(--font-display);
+  }
+
   html,
   body {
     @apply bg-bg text-fg antialiased;
-    font-feature-settings: 'cv11', 'ss01';
   }
 
   ::selection {
@@ -71,10 +190,10 @@
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-accent/50 ring-offset-0;
+    @apply outline-none ring-2 ring-accent/60 ring-offset-0;
   }
 
-  /* Тонкий скроллбар, как в Notion */
+  /* Тонкий скроллбар */
   * {
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--line)) transparent;
@@ -82,6 +201,10 @@
 }
 
 @layer utilities {
+  .text-title {
+    font-family: var(--font-display), ui-serif, Georgia, serif;
+  }
+
   .tabular {
     font-variant-numeric: tabular-nums;
   }
