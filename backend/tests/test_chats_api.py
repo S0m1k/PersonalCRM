@@ -376,6 +376,25 @@ def test_unavailable_model_fails_the_job_but_keeps_the_question(client, anna, as
     assert [m["role"] for m in items] == ["user"]
 
 
+def test_final_failure_leaves_an_error_reply_in_the_chat(client, anna, assistant, system_db):
+    chat = _chat(client, anna)
+    sent = _send(client, anna, chat["id"], "Что такое привет?")
+    job_id = sent["job"]["id"]
+    llm = FailingLLM(LLMUnavailableError("нет"))
+
+    status = client.portal.call(
+        lambda: process_job(assistant.store, system_db, llm, job_id, job_try=3, max_tries=3)
+    )
+
+    assert status == "failed"
+    items = _history(client, anna, chat["id"])["items"]
+    assert [m["role"] for m in items] == ["user", "assistant"]
+    reply = items[-1]
+    assert reply["job_id"] == job_id
+    assert "Модель недоступна" in reply["content"]
+    assert reply["blocks"] == [{"type": "error", "text": reply["content"]}]
+
+
 def test_chat_job_for_deleted_chat_fails_cleanly(client, anna, assistant, system_db):
     chat = _chat(client, anna)
     sent = _send(client, anna, chat["id"], "Сколько у меня контактов?")

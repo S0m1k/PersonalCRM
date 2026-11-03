@@ -210,7 +210,7 @@ export default function AssistantPage() {
                   </Button>
                 )}
                 <MessageList messages={messages} handlers={handlers} />
-                {job && <JobStatus job={job} onCancel={() => void handleCancel()} />}
+                {job && job.status !== 'failed' && <JobStatus job={job} onCancel={() => void handleCancel()} />}
                 {job?.status === 'done' && <ChatTraceDetails trace={job.result?.trace} />}
                 <div ref={endRef} />
               </div>

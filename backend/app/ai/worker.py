@@ -23,6 +23,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from ..auth import tenant_db
 from ..config import settings
+from ..repositories import chats as chats_repo
 from ..repositories import users as users_repo
 from .ask import run_ask
 from .capture import run_capture
@@ -45,6 +46,20 @@ HANDLERS: dict[str, Handler] = {"capture": run_capture, "ask": run_ask, "chat": 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _reply_with_error(db: AsyncIOMotorDatabase, record: dict, job_id: str, error: str) -> None:
+    """Задача чата упала окончательно — оставить в чате ответ с ошибкой, чтобы вопрос не висел без ответа."""
+    if record["kind"] != "chat":
+        return
+    chat_id = str((record.get("input") or {}).get("chat_id", ""))
+    try:
+        if await chats_repo.get_chat(db, chat_id) is None:
+            return  # чат удалили, пока задача ждала
+        text = f"Не получилось ответить: {error}"
+        await chats_repo.add_message(db, chat_id, "assistant", text, [{"type": "error", "text": text}], job_id)
+    except Exception:  # noqa: BLE001 — ошибка записи ответа не должна скрыть исходную ошибку задачи
+        logger.exception("Задача %s: не удалось записать ответ с ошибкой в чат", job_id)
 
 
 async def process_job(
@@ -93,19 +108,23 @@ async def process_job(
                 raise Retry(defer=RETRY_DELAY_S) from exc
             error = "Модель недоступна, попробуйте позже"
             await store.update(job_id, status="failed", error=error, finished_at=_now_iso())
+            await _reply_with_error(db, record, job_id, error)
             return "failed"
         except asyncio.TimeoutError:
             error = "Модель не успела ответить"
             await store.update(job_id, status="failed", error=error, finished_at=_now_iso())
+            await _reply_with_error(db, record, job_id, error)
             return "failed"
         except (LLMError, ToolError) as exc:
             error = str(exc)
             await store.update(job_id, status="failed", error=error, finished_at=_now_iso())
+            await _reply_with_error(db, record, job_id, error)
             return "failed"
         except Exception:  # noqa: BLE001 — подробности в лог, пользователю — общее сообщение
             logger.exception("Задача %s упала", job_id)
             error = "Внутренняя ошибка помощника"
             await store.update(job_id, status="failed", error=error, finished_at=_now_iso())
+            await _reply_with_error(db, record, job_id, error)
             return "failed"
         status = "done"
         result = {

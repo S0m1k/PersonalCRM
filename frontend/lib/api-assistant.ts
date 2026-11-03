@@ -58,7 +58,13 @@ export interface CapturePreviewBlock {
   applied: ApplyResult | null;
 }
 
-export type Block = TextBlock | ChartBlock | TableBlock | ContactsBlock | CapturePreviewBlock;
+/** Помощник не смог ответить: модель недоступна, таймаут, внутренняя ошибка */
+export interface ErrorBlock {
+  type: 'error';
+  text: string;
+}
+
+export type Block = TextBlock | ChartBlock | TableBlock | ContactsBlock | CapturePreviewBlock | ErrorBlock;
 
 // ---------------------------------------------------------------------------
 // Чаты

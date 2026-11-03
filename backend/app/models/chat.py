@@ -97,6 +97,13 @@ class ContactsBlock(BaseModel):
         return value[:MAX_CONTACTS]
 
 
+class ErrorBlock(BaseModel):
+    """Помощник не смог ответить (модель недоступна, таймаут, ошибка) — видно в истории чата."""
+
+    type: Literal["error"] = "error"
+    text: str
+
+
 class CapturePreviewBlock(BaseModel):
     type: Literal["capture_preview"] = "capture_preview"
     job_id: str
@@ -107,7 +114,7 @@ class CapturePreviewBlock(BaseModel):
 
 
 Block = Annotated[
-    Union[TextBlock, ChartBlock, TableBlock, ContactsBlock, CapturePreviewBlock],
+    Union[TextBlock, ChartBlock, TableBlock, ContactsBlock, CapturePreviewBlock, ErrorBlock],
     Field(discriminator="type"),
 ]
 

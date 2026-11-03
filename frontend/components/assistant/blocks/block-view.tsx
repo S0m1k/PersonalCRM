@@ -1,5 +1,6 @@
 'use client';
 
+import { CircleAlert } from 'lucide-react';
 import type { ApplyResult } from '@/lib/api';
 import type { Block, CapturePreviewBlock } from '@/lib/api-assistant';
 import { CapturePreview } from '../capture-preview';
@@ -47,6 +48,13 @@ export function BlockView({ block, handlers }: { block: Block; handlers: Preview
       return <ContactsBlockView block={block} />;
     case 'capture_preview':
       return <PreviewView block={block} handlers={handlers} />;
+    case 'error':
+      return (
+        <p role="alert" className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>{block.text}</span>
+        </p>
+      );
     default:
       return null;
   }
