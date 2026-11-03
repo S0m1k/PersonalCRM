@@ -12,6 +12,10 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from ..auth import get_current_user, get_user_db
 from ..models.user import User
+from ..repositories import contacts as contacts_repo
+from ..repositories import groups as groups_repo
+from ..repositories import interactions as interactions_repo
+from ..repositories import keep_in_touch as keep_in_touch_repo
 from ..repositories import questions as questions_repo
 from ..services.birthdays import upcoming_birthdays
 
@@ -24,12 +28,28 @@ CONTACTS = "contacts"
 BIRTHDAY_WINDOW_DAYS = 14
 RECENT_LIMIT = 8
 QUESTIONS_LIMIT = 8
+KEEP_IN_TOUCH_LIMIT = 5
+INTERACTIONS_LIMIT = 5
 
 _BRIEF = {"first_name": 1, "last_name": 1, "company": 1, "position": 1, "birthday": 1, "template_id": 1}
 
 
 def _name(doc: dict) -> str:
     return " ".join(p for p in (doc.get("first_name", ""), doc.get("last_name", "")) if p).strip()
+
+
+async def _recent_interactions(db: AsyncIOMotorDatabase) -> list[dict]:
+    """Последние взаимодействия (как в Timeline) с именами людей."""
+    page = await interactions_repo.list_page(db, limit=INTERACTIONS_LIMIT)
+    ids = list(dict.fromkeys(c for item in page.items for c in item.contact_ids))
+    names = {c.id: _name(c.model_dump()) for c in await contacts_repo.get_contacts_by_ids(db, ids)}
+    return [
+        {
+            **item.model_dump(mode="json"),
+            "contacts": [{"id": c, "name": names[c]} for c in item.contact_ids if c in names],
+        }
+        for item in page.items
+    ]
 
 
 @router.get("", summary="Сводка для главной страницы")
@@ -60,7 +80,15 @@ async def home(
     ]
 
     open_questions = await questions_repo.list_questions(db, status="open")
+    local_today = today or date.today()
+    overdue = (await keep_in_touch_repo.load_buckets(db, local_today)).overdue[:KEEP_IN_TOUCH_LIMIT]
     return {
+        "keep_in_touch_overdue": [item.model_dump(mode="json") for item in overdue],
+        "recent_interactions": await _recent_interactions(db),
+        "counts": {
+            "groups": await db[groups_repo.COLLECTION].count_documents({}),
+            "tags": len(await contacts_repo.tag_counts(db)),
+        },
         "stats": {
             "contacts": await db[CONTACTS].count_documents({}),
             "open_questions": len(open_questions),
