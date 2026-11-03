@@ -224,7 +224,7 @@ export function fetcher<T>(path: string): Promise<T> {
   return apiFetch<T>(path);
 }
 
-async function apiFetch<T>(
+export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
@@ -843,7 +843,7 @@ export interface AskResult {
 
 export interface AssistantJob<R = CaptureResult | AskResult> {
   id: string;
-  kind: 'capture' | 'ask';
+  kind: 'capture' | 'ask' | 'chat' | 'dossier';
   status: AssistantJobStatus;
   position: number | null;
   created_at: string;

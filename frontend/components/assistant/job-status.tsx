@@ -5,7 +5,7 @@ import type { AssistantJob } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 
 /** Задача ещё не готова или упала: место в очереди, «думает…», ошибка. */
-export function JobStatus({ job, onCancel }: { job: AssistantJob; onCancel: () => void }) {
+export function JobStatus({ job, onCancel }: { job: AssistantJob<unknown>; onCancel: () => void }) {
   if (job.status === 'queued') {
     return (
       <div className="flex items-center gap-2.5 rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-muted">
@@ -39,6 +39,6 @@ export function JobStatus({ job, onCancel }: { job: AssistantJob; onCancel: () =
   return null;
 }
 
-export function isPending(job: AssistantJob | undefined): boolean {
+export function isPending(job: AssistantJob<unknown> | undefined): boolean {
   return job?.status === 'queued' || job?.status === 'running';
 }
