@@ -1,11 +1,16 @@
 import type { Metadata } from 'next';
-import { Inter, Source_Serif_4 } from 'next/font/google';
+import { Cormorant, Onest } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { themeInitScript } from '@/components/app/theme';
 import './globals.css';
 
-const sans = Inter({ subsets: ['latin', 'cyrillic'], variable: '--font-sans', display: 'swap' });
-const serif = Source_Serif_4({ subsets: ['latin', 'cyrillic'], variable: '--font-serif', display: 'swap' });
+const sans = Onest({ subsets: ['latin', 'cyrillic'], variable: '--font-sans', display: 'swap' });
+const display = Cormorant({
+  subsets: ['latin', 'cyrillic'],
+  weight: ['500', '600'],
+  variable: '--font-display',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'PersonalCRM',
@@ -14,7 +19,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${sans.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html lang="ru" className={`${sans.variable} ${display.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
@@ -23,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Toaster
           position="bottom-right"
           toastOptions={{
-            className: '!bg-surface !text-fg !border-line !shadow-pop !rounded-md !text-sm',
+            className: '!bg-surface !text-fg !border-line !shadow-md !rounded-xl !text-sm',
           }}
         />
       </body>
