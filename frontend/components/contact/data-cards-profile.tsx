@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import useSWR from 'swr';
 import { ExternalLink } from 'lucide-react';
 import type { Contact } from '@/lib/api';
+import { goalsKey, type GoalsState } from '@/lib/api-goals';
 import { cn } from '@/lib/utils';
 import { ChipInput } from '@/components/contact/chip-input';
 import { SOCIAL_KEYS, SOCIAL_META, socialHref, type SocialKey } from '@/components/contact/social';
@@ -11,7 +13,8 @@ import { Card, CardHeader } from '@/components/ui/card';
 
 type CardProps = { contact: Contact; onSave: SaveContact };
 
-const LIFE_AREA_SUGGESTIONS = ['Семья', 'Друзья', 'Работа', 'Здоровье', 'Развитие', 'Хобби'];
+/** Сферы «Колеса баланса» по умолчанию — те же, что у стратегии на сервере (models/goals.py) */
+const DEFAULT_LIFE_AREAS = ['Семья', 'Друзья', 'Работа и карьера', 'Здоровье', 'Развитие', 'Хобби и отдых', 'Сообщество'];
 const SCALE = [1, 2, 3, 4, 5] as const;
 
 function SocialRow({ contact, field, isFocused, onSave }: CardProps & { field: SocialKey; isFocused: boolean }) {
@@ -85,13 +88,17 @@ export function SocialCard({ contact, onSave, focusKey }: CardProps & { focusKey
 }
 
 export function LifeAreasCard({ contact, onSave }: CardProps) {
+  // Подсказки — из настроек «Колеса баланса» пользователя, чтобы сферы совпадали со стратегией
+  const { data: goals } = useSWR<GoalsState>(goalsKey());
+  const spheres = goals?.settings.life_balance.spheres.map((s) => s.name);
+  const suggestions = spheres?.length ? spheres : DEFAULT_LIFE_AREAS;
   return (
     <Card>
       <CardHeader label="Сферы жизни" />
       <ChipInput
         values={contact.life_areas}
         onChange={(life_areas) => void onSave({ life_areas })}
-        suggestions={LIFE_AREA_SUGGESTIONS}
+        suggestions={suggestions}
         placeholder="Добавить сферу…"
         ariaLabel="Новая сфера жизни"
         emptyText="Сферы «Колеса баланса», к которым относится человек."
