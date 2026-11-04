@@ -39,6 +39,7 @@ def test_registry_describes_every_tool_with_json_schema():
     assert {s["name"] for s in specs} == {
         "count_contacts_by", "interactions_over_time", "birthdays_by_month",
         "contacts_added_over_time", "top_contacts_by_interactions", "stale_contacts", "goal_progress",
+        "find_contacts",
     }
     for spec in specs:
         assert spec["description"]
@@ -309,3 +310,98 @@ async def test_goal_progress_returns_chart_for_primary_approach(db):
 async def test_goal_progress_rejects_bad_period(db):
     with pytest.raises(ToolError):
         await run_tool(db, "goal_progress", {"period": 5})
+
+
+# --- find_contacts: «кто в Санкт-Петербурге» — список людей, а не график ----------------------------
+
+
+async def _people(db) -> None:
+    await _add(db, first_name="Алексей", last_name="Лебедев", city="Санкт-Петербург", company="Ozon",
+               position="Аналитик", tags=["данные"])
+    await _add(db, first_name="Виктория", last_name="Тарасова", city="Санкт-Петербург", company="VK",
+               position="Редактор", tags=["медиа"])
+    await _add(db, first_name="Анна", last_name="Смирнова", city="Москва", company="Яндекс",
+               position="Продакт-менеджер", tags=["продукт", "ментор"])
+    await _add(db, first_name="Иван", last_name="Павлов", city="Дубай", company="Тинькофф", tags=["инвестор"])
+
+
+def _names(output) -> list[str]:
+    return [c["name"] for c in output.facts["shown"]]
+
+
+@pytest.mark.parametrize("value", ["Санкт-Петербург", "Санкт-Петербурге", "СПб", "спб", "Питер", "в Питере"])
+async def test_find_by_city_matches_word_forms_and_abbreviations(db, value):
+    await _people(db)
+
+    out = await run_tool(db, "find_contacts", {"field": "city", "value": value})
+
+    assert sorted(_names(out)) == ["Алексей Лебедев", "Виктория Тарасова"]
+    assert out.facts["total_matches"] == 2
+
+
+async def test_find_returns_names_table_and_contact_chips_not_a_chart(db):
+    await _people(db)
+
+    out = await run_tool(db, "find_contacts", {"field": "city", "value": "Москве"})
+
+    assert _names(out) == ["Анна Смирнова"]
+    assert [b["type"] for b in out.blocks] == ["table", "contacts"]
+    row = out.blocks[0]["rows"][0]
+    assert row["name"] == "Анна Смирнова" and row["company"] == "Яндекс"
+    assert out.blocks[1]["contacts"][0]["name"] == "Анна Смирнова"
+
+
+@pytest.mark.parametrize(
+    "field, value, expected",
+    [
+        ("company", "яндекс", ["Анна Смирнова"]),
+        ("position", "аналитик", ["Алексей Лебедев"]),
+        ("tag", "МЕНТОР", ["Анна Смирнова"]),
+        ("text", "Павлов", ["Иван Павлов"]),
+    ],
+)
+async def test_find_by_other_fields(db, field, value, expected):
+    await _people(db)
+
+    out = await run_tool(db, "find_contacts", {"field": field, "value": value})
+
+    assert _names(out) == expected
+
+
+async def test_find_by_group_resolves_group_names(db):
+    gid = str((await db["groups"].insert_one({"name": "Семья"})).inserted_id)
+    await _add(db, first_name="Пётр", last_name="Орлов", group_ids=[gid])
+    await _add(db, first_name="Глеб", last_name="Ковалёв", group_ids=[])
+
+    out = await run_tool(db, "find_contacts", {"field": "group", "value": "Семья"})
+
+    assert _names(out) == ["Пётр Орлов"]
+
+
+async def test_find_with_no_match_says_so_and_has_no_blocks(db):
+    await _people(db)
+
+    out = await run_tool(db, "find_contacts", {"field": "city", "value": "Лиссабон"})
+
+    assert out.facts["total_matches"] == 0 and out.facts["shown"] == []
+    assert out.blocks == []
+
+
+async def test_find_limit_caps_shown_but_reports_the_total(db):
+    for i in range(7):
+        await _add(db, first_name=f"Имя{i}", last_name="Москвич", city="Москва")
+
+    out = await run_tool(db, "find_contacts", {"field": "city", "value": "Москва", "limit": 3})
+
+    assert len(out.facts["shown"]) == 3
+    assert out.facts["total_matches"] == 7
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"field": "city"}, {"value": "Москва"}, {"field": "password", "value": "x"}, {"field": "city", "value": "x" * 300},
+     {"field": "city", "value": "Москва", "limit": 0}],
+)
+async def test_find_rejects_bad_params(db, params):
+    with pytest.raises(ToolError):
+        await run_tool(db, "find_contacts", params)

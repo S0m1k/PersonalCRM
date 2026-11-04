@@ -423,6 +423,90 @@ async def goal_progress(db: AsyncIOMotorDatabase, params: dict) -> ToolOutput:
 # ---------------------------------------------------------------------------
 # Реестр
 # ---------------------------------------------------------------------------
+# Поиск людей: «кто в Санкт-Петербурге», «кто работает в Яндексе»
+# ---------------------------------------------------------------------------
+
+FIND_FIELDS = ("city", "company", "position", "tag", "group", "text")
+FIND_LIMIT = 50
+STEM_MIN = 5  # от скольки букв в запросе допускаем «основу» без падежного окончания
+# Как город называют в разговоре → как он записан в карточках
+CITY_ALIASES = {
+    "спб": "санкт-петербург", "питер": "санкт-петербург", "петербург": "санкт-петербург",
+    "мск": "москва", "нск": "новосибирск", "екб": "екатеринбург", "нн": "нижний новгород",
+}
+_LEADING_PREP = re.compile(r"^(?:в|во|из|на|у|по)\s+", re.IGNORECASE)
+
+
+def _norm(text: str) -> str:
+    return text.casefold().replace("ё", "е").strip()
+
+
+def _query(value: str, field: str) -> str:
+    """Запрос в нормальном виде: без предлога («в Питере»), с учётом разговорных названий городов."""
+    needle = _norm(_LEADING_PREP.sub("", value.strip()))
+    if field == "city":
+        for short, full in CITY_ALIASES.items():
+            # «питер», «питере», «питером»: у длинных названий допускаем падежное окончание
+            if needle == short or (len(short) >= STEM_MIN and needle.startswith(short)):
+                return full
+    return needle
+
+
+def _text_matches(needle: str, hay: str) -> bool:
+    """Совпадение с учётом падежей: «в Москве» → «Москва», «Санкт-Петербурге» → «Санкт-Петербург»."""
+    hay = _norm(hay)
+    if not needle or not hay:
+        return False
+    if needle in hay or (len(hay) >= 3 and hay in needle):
+        return True
+    return len(needle) >= STEM_MIN and needle[: max(4, len(needle) - 2)] in hay
+
+
+def _full_name(doc: dict) -> str:
+    return _name(doc)
+
+
+def _find_values(doc: dict, field: str, groups: dict[str, str]) -> list[str]:
+    if field == "tag":
+        return _values_of(doc, "tags", groups)
+    if field == "group":
+        return _values_of(doc, "group", groups)
+    if field == "text":
+        keys = ("first_name", "last_name", "company", "position", "city", "description", "notes", "category")
+        return [str(doc.get(k) or "") for k in keys] + _values_of(doc, "tags", groups)
+    return _values_of(doc, field, groups)
+
+
+async def find_contacts(db: AsyncIOMotorDatabase, params: dict) -> ToolOutput:
+    field, limit = params["field"], params.get("limit", FIND_LIMIT)
+    needle = _query(params["value"], field)
+    groups = await _group_names(db) if field in ("group", "text") else {}
+    found = [
+        doc for doc in await _contact_docs(db)
+        if any(_text_matches(needle, v) for v in _find_values(doc, field, groups))
+    ]
+    found.sort(key=lambda d: _name(d).casefold())
+    shown = found[:limit]
+    people = [
+        {"id": str(d["_id"]), "name": _name(d), "position": str(d.get("position") or ""),
+         "company": str(d.get("company") or ""), "city": str(d.get("city") or "")}
+        for d in shown
+    ]
+    facts = {"field": field, "value": params["value"], "total_matches": len(found), "shown": people}
+    blocks: list[dict[str, Any]] = []
+    if people:
+        blocks = [
+            {"type": "table", "title": f"Найдено контактов: {len(found)}",
+             "columns": [{"key": "name", "label": "Контакт"}, {"key": "position", "label": "Должность"},
+                         {"key": "company", "label": "Компания"}, {"key": "city", "label": "Город"}],
+             "rows": [{k: p[k] for k in ("name", "position", "company", "city")} for p in people]},
+            {"type": "contacts", "contact_ids": [p["id"] for p in people],
+             "contacts": [{"id": p["id"], "name": p["name"]} for p in people]},
+        ]
+    return ToolOutput(facts, blocks)
+
+
+# ---------------------------------------------------------------------------
 
 _DATE_PROP = {"type": "string", "format": "date"}
 _PERIOD_PROP = {"type": "string", "enum": ["week", "month"], "default": "month"}
@@ -431,9 +515,23 @@ ANALYTICS_TOOLS: dict[str, AnalyticsTool] = {
     t.name: t
     for t in (
         AnalyticsTool(
+            "find_contacts",
+            "Найти и назвать конкретных людей по условию: кто живёт в городе, работает в компании, на должности, "
+            "имеет тег, состоит в группе, или по слову в карточке. Для вопросов «кто в Санкт-Петербурге», "
+            "«кто работает в Яндексе», «покажи дизайнеров», «найди людей с тегом ментор». "
+            "Возвращает список имён, а не цифры.",
+            {"type": "object", "properties": {
+                "field": {"type": "string", "enum": list(FIND_FIELDS)},
+                "value": {"type": "string", "maxLength": 100},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": FIND_LIMIT},
+            }, "required": ["field", "value"], "additionalProperties": False},
+            find_contacts,
+        ),
+        AnalyticsTool(
             "count_contacts_by",
             "Сколько контактов в каждой группе по полю: компании, города, категории, приоритеты, теги, источники, группы. "
-            "Для вопросов «сколько у меня контактов по городам», «распределение по компаниям».",
+            "Только цифры и график. Для вопросов «сколько у меня контактов по городам», «распределение по компаниям». "
+            "Не подходит для вопросов «кто…» — там нужен find_contacts.",
             {"type": "object", "properties": {
                 "field": {"type": "string", "enum": list(CONTACT_FIELDS)},
                 "chart": {"type": "string", "enum": ["bar", "pie"], "default": "bar"},

@@ -412,5 +412,50 @@
     "expect": {
       "tools": []
     }
+  },
+  {
+    "name": "tools-who-in-city",
+    "kind": "tools",
+    "question": "Кто в Санкт-Петербурге?",
+    "expect": {
+      "tools": [
+        "find_contacts"
+      ],
+      "params": {
+        "find_contacts": {
+          "field": "city"
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-who-in-company",
+    "kind": "tools",
+    "question": "Кто работает в Яндексе?",
+    "expect": {
+      "tools": [
+        "find_contacts"
+      ],
+      "params": {
+        "find_contacts": {
+          "field": "company"
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-find-by-nickname-city",
+    "kind": "tools",
+    "question": "Найди людей из Питера",
+    "expect": {
+      "tools": [
+        "find_contacts"
+      ],
+      "params": {
+        "find_contacts": {
+          "field": "city"
+        }
+      }
+    }
   }
 ]

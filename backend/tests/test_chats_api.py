@@ -280,6 +280,70 @@ def test_analytics_question_returns_chart_with_real_numbers(client, anna, assist
     assert job["result"]["trace"]["tools"] == [{"tool": "count_contacts_by", "params": {"field": "city", "chart": "pie"}}]
 
 
+def _spb_contacts(client, auth):
+    for first, last, city in (("Алексей", "Лебедев", "Санкт-Петербург"), ("Виктория", "Тарасова", "Санкт-Петербург"),
+                              ("Анна", "Смирнова", "Москва")):
+        _contact(client, auth, first_name=first, last_name=last, city=city)
+
+
+def test_who_question_lists_people_instead_of_drawing_a_chart(client, anna, assistant, system_db):
+    _spb_contacts(client, anna)
+    chat = _chat(client, anna)
+    sent = _send(client, anna, chat["id"], "Кто в Санкт-Петербурге?")
+    plan = [{"tool": "find_contacts", "field": "city", "value": "Санкт-Петербург"}]
+    llm = FakeLLM(chat_responder(plan, "В Санкт-Петербурге: Алексей Лебедев и Виктория Тарасова."))
+
+    assert _run(client, assistant, system_db, sent["job"]["id"], llm) == "done"
+
+    reply = _history(client, anna, chat["id"])["items"][-1]
+    assert [b["type"] for b in reply["blocks"]] == ["text", "table", "contacts"]
+    table = reply["blocks"][1]
+    assert sorted(r["name"] for r in table["rows"]) == ["Алексей Лебедев", "Виктория Тарасова"]
+    explain = next(c for c in llm.calls if c["schema_name"] == "explain")
+    assert "Алексей Лебедев" in explain["user"] and "Виктория Тарасова" in explain["user"]
+    assert "Анна Смирнова" not in explain["user"]
+
+
+def test_planner_gets_find_tool_and_a_value_slot(client, anna, assistant, system_db):
+    chat = _chat(client, anna)
+    sent = _send(client, anna, chat["id"], "Кто работает в Яндексе?")
+    llm = FakeLLM(chat_responder([]))
+
+    _run(client, assistant, system_db, sent["job"]["id"], llm)
+
+    plan_call = next(c for c in llm.calls if c["schema_name"] == "plan")
+    assert "find_contacts" in plan_call["system"] and "«кто" in plan_call["system"]
+
+
+@pytest.mark.parametrize("question", ["Кто в Санкт-Петербурге?", "у кого из контактов есть тег ментор", "Найди людей из Питера"])
+def test_who_question_is_not_answered_with_a_count_chart_even_if_model_picks_counting(
+    client, anna, assistant, system_db, question
+):
+    _spb_contacts(client, anna)
+    chat = _chat(client, anna)
+    sent = _send(client, anna, chat["id"], question)
+    llm = FakeLLM(chat_responder([{"tool": "count_contacts_by", "field": "city"}]))
+
+    assert _run(client, assistant, system_db, sent["job"]["id"], llm) == "done"
+
+    reply = _history(client, anna, chat["id"])["items"][-1]
+    assert "chart" not in [b["type"] for b in reply["blocks"]]
+    trace = client.get(f"{BASE}/jobs/{sent['job']['id']}", headers=anna).json()["result"]["trace"]
+    assert trace["route"] == "ask"
+
+
+def test_counting_question_still_gets_a_chart(client, anna, assistant, system_db):
+    _spb_contacts(client, anna)
+    chat = _chat(client, anna)
+    sent = _send(client, anna, chat["id"], "Сколько контактов в Санкт-Петербурге по городам?")
+    llm = FakeLLM(chat_responder([{"tool": "count_contacts_by", "field": "city"}]))
+
+    _run(client, assistant, system_db, sent["job"]["id"], llm)
+
+    reply = _history(client, anna, chat["id"])["items"][-1]
+    assert "chart" in [b["type"] for b in reply["blocks"]]
+
+
 def test_second_message_sees_conversation_history(client, anna, assistant, system_db):
     _contact(client, anna, first_name="Пётр", city="Москва")
     chat = _chat(client, anna)
