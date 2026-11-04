@@ -572,7 +572,7 @@ def _metrics_life(settings: dict, ctx: MetricsContext) -> dict[str, Any]:
         if s["contacts"] == 0:
             hints.append(f"В сфере «{s['name']}» нет контактов: отметьте людей полем «сферы жизни».")
         elif pct < LAGGING_PCT:
-            hints.append(f"Сфера «{s['name']}» просела: {s['per_month']:g} касаний в месяц при цели {s['target_per_month']:g}.")
+            hints.append(f"Сфера «{s['name']}» просела: касаний в месяц {s['per_month']:g} при цели {s['target_per_month']:g}.")
         elif pct > EXCESS_PCT:
             hints.append(f"В сфере «{s['name']}» касаний вдвое больше цели: перекос в её сторону.")
     scored = [min(s["pct_of_target"], 100) for s in spheres if s["pct_of_target"] is not None]
