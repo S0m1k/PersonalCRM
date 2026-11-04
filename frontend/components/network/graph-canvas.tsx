@@ -292,6 +292,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       theme.disconnect();
       simRef.current?.stop();
       cancelAnimationFrame(frame.current);
+      // Обнулить: иначе requestDraw считает кадр запланированным и больше не рисует
+      // (так было после двойного монтирования эффектов в StrictMode — пустой холст)
+      frame.current = 0;
     };
   }, [fit, requestDraw]);
 
