@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useMemo, useState } from 'react';
-import useSWR, { mutate } from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { BellRing } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Contact } from '@/lib/api';
@@ -34,6 +34,8 @@ function KeepInTouchView() {
   const groupId = url.get('group');
   const tag = url.get('tag');
 
+  // mutate именно из контекста: у приложения свой кэш SWR, глобальный mutate его не видит
+  const { mutate } = useSWRConfig();
   const [display, updateDisplay] = useKitDisplay();
   // Оптимистичные частоты: id → дни (null — снять), пока PATCH в пути
   const [pending, setPending] = useState<Record<string, number | null>>({});

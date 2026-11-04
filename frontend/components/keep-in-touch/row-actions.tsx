@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { markTouched, snoozeContact, type InteractionKind } from '@/lib/api-crm';
 import { SNOOZE_OPTIONS, type KitRow } from '@/lib/keep-in-touch';
 import { cn, errorText, plural } from '@/lib/utils';
-import { INTERACTION_KINDS, INTERACTION_KIND_ORDER, revalidateInteractions } from '@/components/interactions';
+import { INTERACTION_KINDS, INTERACTION_KIND_ORDER, useRevalidateInteractions } from '@/components/interactions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Menu, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTrigger, Tooltip } from '@/components/ui/overlays';
@@ -18,6 +18,8 @@ export function TouchedButton({ row, iconOnly = false }: { row: KitRow; iconOnly
   const [kind, setKind] = useState<InteractionKind>('message');
   const [note, setNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  const revalidateInteractions = useRevalidateInteractions();
 
   async function save() {
     setIsSaving(true);
@@ -81,6 +83,8 @@ export function TouchedButton({ row, iconOnly = false }: { row: KitRow; iconOnly
 
 /** «Отложить» на 1/3/7/14/30 дней. */
 export function SnoozeMenu({ row, iconOnly = false }: { row: KitRow; iconOnly?: boolean }) {
+  const revalidateInteractions = useRevalidateInteractions();
+
   async function snooze(days: number) {
     try {
       await snoozeContact(row.id, days);

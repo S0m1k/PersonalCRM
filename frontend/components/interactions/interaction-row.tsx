@@ -11,7 +11,7 @@ import { ContactChip } from './contact-chip';
 import { whenLabel } from './format';
 import { InteractionComposer } from './interaction-composer';
 import { InteractionKindIcon, kindLabel } from './kinds';
-import { revalidateInteractions } from './revalidate';
+import { useRevalidateInteractions } from './revalidate';
 
 export interface InteractionRowProps {
   interaction: Interaction;
@@ -37,6 +37,8 @@ export function InteractionRow({ interaction, showContacts = true, className }: 
   const isCalendar = interaction.source === 'calendar';
   const title = interactionTitle(interaction);
   const hasBody = interaction.body.trim() !== '' && interaction.body.trim() !== title;
+
+  const revalidateInteractions = useRevalidateInteractions();
 
   async function remove() {
     if (!window.confirm('Удалить запись?')) return;

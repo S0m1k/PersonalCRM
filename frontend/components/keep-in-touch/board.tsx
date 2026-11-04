@@ -136,7 +136,13 @@ function BoardColumn({
 function DraggableCard({ row, compact, onMoveTo }: { row: KitRow; compact: boolean; onMoveTo: (row: KitRow, column: KitColumn) => void }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({ id: row.id });
   return (
-    <li ref={setNodeRef} className={cn(isDragging && 'opacity-40')}>
+    // Мышью тянем за всю карточку (клик по ссылке и кнопкам работает: перенос стартует после 6 px движения);
+    // клавиатурой — через ручку слева, там же атрибуты доступности
+    <li
+      ref={setNodeRef}
+      onPointerDown={listeners?.onPointerDown as React.PointerEventHandler<HTMLLIElement> | undefined}
+      className={cn('select-none', isDragging && 'opacity-40')}
+    >
       <CardBody
         row={row}
         compact={compact}

@@ -12,7 +12,7 @@ import { SectionLabel } from '@/components/ui/section-label';
 import { cn } from '@/lib/utils';
 import { toLocalInput } from './format';
 import { INTERACTION_KINDS, INTERACTION_KIND_ORDER } from './kinds';
-import { revalidateInteractions } from './revalidate';
+import { useRevalidateInteractions } from './revalidate';
 import { useContactsByIds } from './use-contacts-by-ids';
 
 export interface InteractionComposerProps {
@@ -59,6 +59,8 @@ function ComposerForm({
   const [isSaving, setIsSaving] = useState(false);
 
   const canSave = contacts.length > 0 && when !== '' && !isSaving;
+
+  const revalidateInteractions = useRevalidateInteractions();
 
   async function save() {
     setIsSaving(true);
