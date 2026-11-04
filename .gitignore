@@ -35,3 +35,6 @@ Thumbs.db
 # MongoDB dumps
 /dump/
 /backups/
+
+# Копия воркера MapLibre (scripts/copy-maplibre-worker.mjs, создаётся перед dev/build)
+frontend/public/maplibre/

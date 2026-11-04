@@ -20,6 +20,8 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
+# public/ standalone-сборка не копирует сама (там, например, воркер MapLibre для /map)
+COPY --from=build /app/public ./public
 
 USER node
 EXPOSE 3000

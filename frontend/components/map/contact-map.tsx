@@ -47,6 +47,7 @@ interface Props {
 }
 
 const SOURCE = 'contacts';
+const MAPLIBRE_WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
 const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors';
 const PIN_HIT_PADDING = 6;
@@ -119,6 +120,8 @@ export const ContactMap = forwardRef<ContactMapHandle, Props>(function ContactMa
       if (!containerRef.current) return;
       const maplibre = await import('maplibre-gl');
       if (isDisposed || !containerRef.current) return;
+      // Воркер отдаётся из public/ (scripts/copy-maplibre-worker.mjs): рядом с чанком Next его нет
+      maplibre.setWorkerUrl(MAPLIBRE_WORKER_URL);
 
       const map = new maplibre.Map({
         container: containerRef.current,
