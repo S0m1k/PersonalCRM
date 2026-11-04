@@ -57,8 +57,8 @@ async def _check_contacts(db: AsyncIOMotorDatabase, contact_ids: list[str]) -> N
 async def list_interactions(
     db: DbDep,
     _user: AuthDep,
-    contact_id: Optional[str] = Query(default=None, description="Только с этим человеком"),
-    kind: Optional[InteractionKind] = Query(default=None),
+    contact_id: Optional[list[str]] = Query(default=None, description="Только с этими людьми (можно повторять)"),
+    kind: Optional[list[InteractionKind]] = Query(default=None, description="Типы (можно повторять)"),
     from_: Optional[datetime] = Query(default=None, alias="from", description="Не раньше"),
     to: Optional[datetime] = Query(default=None, description="Не позже"),
     q: Optional[str] = Query(default=None, description="Поиск по заголовку и тексту"),
@@ -69,8 +69,8 @@ async def list_interactions(
     try:
         return await repo.list_page(
             db,
-            contact_id=contact_id,
-            kind=kind,
+            contact_ids=contact_id,
+            kinds=kind,
             from_=from_,
             to=to,
             q=q,

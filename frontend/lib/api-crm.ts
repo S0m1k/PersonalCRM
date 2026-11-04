@@ -114,8 +114,10 @@ export interface InteractionInput {
 export type InteractionUpdate = Partial<Omit<InteractionInput, 'source'>>;
 
 export interface InteractionListParams {
-  contact_id?: string;
-  kind?: InteractionKind;
+  /** один id или несколько (ИЛИ) */
+  contact_id?: string | string[];
+  /** один тип или несколько (ИЛИ) */
+  kind?: InteractionKind | InteractionKind[];
   /** ISO-время, не раньше */
   from?: string;
   /** ISO-время, не позже */
@@ -131,8 +133,8 @@ export interface InteractionListParams {
 /** Ключ SWR ленты (одна страница); для «Показать ещё» передавайте cursor из предыдущей. */
 export function interactionsKey(params: InteractionListParams = {}): string {
   const qs = new URLSearchParams();
-  if (params.contact_id) qs.set('contact_id', params.contact_id);
-  if (params.kind) qs.set('kind', params.kind);
+  for (const id of [params.contact_id ?? []].flat()) qs.append('contact_id', id);
+  for (const kind of [params.kind ?? []].flat()) qs.append('kind', kind);
   if (params.from) qs.set('from', params.from);
   if (params.to) qs.set('to', params.to);
   if (params.q) qs.set('q', params.q);
