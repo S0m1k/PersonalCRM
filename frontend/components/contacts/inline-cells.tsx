@@ -114,7 +114,10 @@ export function PriorityCell({ value, onChange }: { value: string; onChange: (le
           {isPriorityLevel(value) ? (
             <Tag color={PRIORITY_META[value].color}>{PRIORITY_META[value].label}</Tag>
           ) : (
-            <Pill>Задать</Pill>
+            // Не <Pill>: он сам кнопка, а кнопка внутри кнопки — невалидный HTML (ошибка гидратации)
+            <span className="inline-flex h-7 items-center rounded-full border border-line bg-surface px-3 text-[13px] font-medium text-muted transition-colors hover:bg-hover hover:text-fg">
+              Задать
+            </span>
           )}
         </button>
       </PopoverTrigger>
