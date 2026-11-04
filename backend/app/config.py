@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # Потолок числа аккаунтов: открытая регистрация не должна забить сервер базами
     max_users: int = 50
 
+    # Геокодирование адресов контактов и поиск мест на карте через Nominatim (OpenStreetMap).
+    # Выключено — /api/geo/* отвечают 503 и наружу ничего не уходит.
+    geocoding_enabled: bool = True
+
     # Регион для номеров без кода страны: 89215535333 → +79215535333 (см. services/phones.py)
     default_phone_region: str = "RU"
 
