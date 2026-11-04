@@ -62,7 +62,7 @@ export function IconTile({ icon: Icon, size = 'lg' }: { icon: LucideIcon; size?:
     <span
       aria-hidden
       className={cn(
-        'inline-flex items-center justify-center rounded-xl border border-line bg-sidebar text-muted shadow-[0_1px_2px_rgb(0_0_0/0.04)]',
+        'inline-flex items-center justify-center rounded-xl border border-line bg-sidebar text-muted shadow-xs',
         size === 'lg' ? 'size-12 sm:size-14' : 'size-10',
       )}
     >

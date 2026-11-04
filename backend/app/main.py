@@ -24,11 +24,24 @@ logger = logging.getLogger(__name__)
 from .routers import attachments as attachments_router
 from .ai.jobs import close_assistant
 from .routers import assistant as assistant_router
+from .routers import assistant_chats as assistant_chats_router
 from .routers import auth as auth_router
 from .routers import calendar as calendar_router
 from .routers import contacts as contacts_router
+from .routers import duplicates as duplicates_router
+from .routers import goals as goals_router
+from .routers import groups as groups_router
+from .routers import places as places_router
+from .routers import views as views_router
 from .routers import home as home_router
+from .routers import interactions as interactions_router
+from .routers import keep_in_touch as keep_in_touch_router
+from .routers import geo as geo_router
+from .routers import network as network_router
+from .routers import preferences as preferences_router
+from .routers import tags as tags_router
 from .routers import questions as questions_router
+from .routers import reminders as reminders_router
 from .routers import templates as templates_router
 from .routers import import_ as import_router
 from .routers import sync as sync_router
@@ -113,6 +126,8 @@ app.add_middleware(
 # Auth: /api/auth/* — регистрация и вход публичные, остальное требует токена
 app.include_router(auth_router.router)
 
+# Дубли и слияние (/api/contacts/duplicates, /merge) — раньше contacts: иначе /{contact_id} перехватит путь
+app.include_router(duplicates_router.router)
 # Contacts: /api/contacts/* — требуют токена
 app.include_router(contacts_router.router)
 # Вложения к контактам: /api/contacts/{id}/attachments (файлы — в S3 / MinIO)
@@ -122,6 +137,20 @@ app.include_router(attachments_router.router)
 app.include_router(templates_router.router)
 app.include_router(questions_router.router)
 app.include_router(home_router.router)
+app.include_router(reminders_router.router)
+
+# Данные для экранов в стиле Dex (Sprint 11): группы, теги, лента взаимодействий, keep in touch, граф
+app.include_router(groups_router.router)
+app.include_router(views_router.router)
+app.include_router(places_router.router)
+app.include_router(tags_router.router)
+app.include_router(interactions_router.router)
+app.include_router(keep_in_touch_router.router)
+app.include_router(goals_router.router)
+app.include_router(network_router.router)
+# Карта, Сеть, Priority Map (Wave 1): поиск мест / геокодирование, настройки уровней приоритета
+app.include_router(geo_router.router)
+app.include_router(preferences_router.router)
 
 # Календарь: /api/calendar/* — события, привязанные к людям (Sprint 7)
 app.include_router(calendar_router.router)
@@ -140,6 +169,7 @@ app.include_router(carddav_router.router)
 
 # ИИ-помощник: /api/assistant/* — задачи в очереди arq, модель — в отдельном воркере (Sprint 6)
 app.include_router(assistant_router.router)
+app.include_router(assistant_chats_router.router)
 
 
 # ---------------------------------------------------------------------------

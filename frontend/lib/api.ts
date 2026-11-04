@@ -5,6 +5,9 @@
  * выбрасывает ошибку при HTTP-ошибках, типизирует ответы.
  */
 
+import type { HomeInteraction, KeepInTouchItem } from './api-crm';
+import type { Reminder } from './api-reminders';
+
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -40,6 +43,30 @@ export interface ExternalIds {
   telegram?: string | null;
 }
 
+/** Как часто хочется общаться с человеком (Keep in touch). */
+export interface KeepInTouchSettings {
+  /** 1..730 или null — не следить */
+  frequency_days: number | null;
+  /** YYYY-MM-DD: напоминание отложено до этой даты включительно */
+  snoozed_until: string | null;
+}
+
+export interface ContactLocation {
+  lat: number;
+  lng: number;
+  label: string;
+}
+
+/** http(s)-ссылка или ник (@name); пустая строка — не задано. */
+export interface SocialLinks {
+  linkedin: string;
+  facebook: string;
+  instagram: string;
+  telegram: string;
+  twitter: string;
+  website: string;
+}
+
 export interface Contact {
   id: string;
   first_name: string;
@@ -58,6 +85,25 @@ export interface Contact {
   external_ids: ExternalIds;
   template_id: string | null;
   fields: Record<string, FieldValue>;
+  /** Короткое био (отдельно от notes) */
+  description: string;
+  tags: string[];
+  group_ids: string[];
+  keep_in_touch: KeepInTouchSettings;
+  /** YYYY-MM-DD */
+  first_met_at: string | null;
+  first_met_note: string;
+  address: string;
+  location: ContactLocation | null;
+  social: SocialLinks;
+  /** Ось Priority Map, 1..5 */
+  importance: number | null;
+  /** Ось Priority Map, 1..5 */
+  closeness: number | null;
+  /** Сферы жизни («Колесо баланса») */
+  life_areas: string[];
+  /** Ставит сервер (взаимодействия + прошедшие встречи); клиент не пишет */
+  last_interaction_at: string | null;
   source: string;
   sources: string[];
   last_synced_at: string | null;
@@ -83,6 +129,19 @@ export interface ContactCreate {
   /** "" в PATCH — снять шаблон */
   template_id?: string | null;
   fields?: Record<string, FieldValue>;
+  description?: string;
+  tags?: string[];
+  group_ids?: string[];
+  keep_in_touch?: KeepInTouchSettings;
+  /** В PATCH null очищает поле (так же location, importance, closeness) */
+  first_met_at?: string | null;
+  first_met_note?: string;
+  address?: string;
+  location?: ContactLocation | null;
+  social?: Partial<SocialLinks>;
+  importance?: number | null;
+  closeness?: number | null;
+  life_areas?: string[];
 }
 
 export type ContactUpdate = Partial<ContactCreate>;
@@ -158,6 +217,13 @@ export interface HomeSummary {
   birthdays: UpcomingBirthday[];
   recent: RecentContact[];
   open_questions: Question[];
+  /** Sprint 11: топ-5 просроченных из Keep in touch */
+  keep_in_touch_overdue: KeepInTouchItem[];
+  /** Sprint 11: последние 5 взаимодействий с именами людей */
+  recent_interactions: HomeInteraction[];
+  counts: { groups: number; tags: number };
+  /** 5 ближайших невыполненных напоминаний */
+  reminders: Reminder[];
 }
 
 export interface TokenResponse {
@@ -224,7 +290,8 @@ export function fetcher<T>(path: string): Promise<T> {
   return apiFetch<T>(path);
 }
 
-async function apiFetch<T>(
+/** Общая обёртка над fetch (Bearer-токен, ошибки → ApiError); используется и в api-*.ts. */
+export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
@@ -331,10 +398,22 @@ export async function revokeCarddavPassword(): Promise<void> {
 // Contacts
 // ---------------------------------------------------------------------------
 
+export type ContactSort = 'last_interaction' | 'name' | 'created' | 'importance';
+
 export interface ListParams {
   q?: string;
   category?: string;
   priority?: string;
+  tag?: string;
+  group_id?: string;
+  has_location?: boolean;
+  has_frequency?: boolean;
+  has_priority?: boolean;
+  has_birthday?: boolean;
+  has_place?: boolean;
+  source?: string;
+  inactive_days?: number;
+  sort?: ContactSort;
   skip?: number;
   limit?: number;
 }
@@ -344,6 +423,16 @@ export async function getContacts(params: ListParams = {}): Promise<Contact[]> {
   if (params.q) qs.set('q', params.q);
   if (params.category) qs.set('category', params.category);
   if (params.priority) qs.set('priority', params.priority);
+  if (params.tag) qs.set('tag', params.tag);
+  if (params.group_id) qs.set('group_id', params.group_id);
+  if (params.has_location !== undefined) qs.set('has_location', String(params.has_location));
+  if (params.has_frequency !== undefined) qs.set('has_frequency', String(params.has_frequency));
+  if (params.has_priority !== undefined) qs.set('has_priority', String(params.has_priority));
+  if (params.has_birthday !== undefined) qs.set('has_birthday', String(params.has_birthday));
+  if (params.has_place !== undefined) qs.set('has_place', String(params.has_place));
+  if (params.source) qs.set('source', params.source);
+  if (params.inactive_days) qs.set('inactive_days', String(params.inactive_days));
+  if (params.sort) qs.set('sort', params.sort);
   if (params.skip !== undefined) qs.set('skip', String(params.skip));
   if (params.limit !== undefined) qs.set('limit', String(params.limit));
 
@@ -843,7 +932,7 @@ export interface AskResult {
 
 export interface AssistantJob<R = CaptureResult | AskResult> {
   id: string;
-  kind: 'capture' | 'ask';
+  kind: 'capture' | 'ask' | 'chat' | 'dossier';
   status: AssistantJobStatus;
   position: number | null;
   created_at: string;

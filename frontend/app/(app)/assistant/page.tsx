@@ -1,126 +1,161 @@
 'use client';
 
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
-import { MessageCircle, Sparkles } from 'lucide-react';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { toast } from 'sonner';
+import { applyCapture, assistantJobKey, cancelAssistantJob, type AssistantJob } from '@/lib/api';
 import {
-  applyCapture,
-  assistantInfoKey,
-  assistantJobKey,
-  cancelAssistantJob,
-  startAsk,
-  startCapture,
-  type ApplyResult,
-  type AskResult,
-  type AssistantInfo,
-  type AssistantJob,
-  type CaptureResult,
-} from '@/lib/api';
-import { cn, errorText } from '@/lib/utils';
-import { Page, PageHeader } from '@/components/app/page';
+  chatMessagesKey,
+  chatsKey,
+  createChat,
+  deleteChat,
+  fetchOlderMessages,
+  renameChat,
+  sendChatMessage,
+  type Chat,
+  type ChatJobResult,
+  type ChatMessage,
+  type MessagePage,
+} from '@/lib/api-assistant';
+import { errorText } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/input';
-import { CapturePreview } from '@/components/assistant/capture-preview';
+import { Pill } from '@/components/ui/pill';
+import { ChatList } from '@/components/assistant/chat-list';
+import { ChatTraceDetails } from '@/components/assistant/chat-trace';
+import { Composer } from '@/components/assistant/composer';
 import { JobStatus, isPending } from '@/components/assistant/job-status';
-import { DeletePreview } from '@/components/assistant/delete-preview';
-import { QuestionHint } from '@/components/assistant/question-hint';
-import { TraceDetails } from '@/components/assistant/trace-details';
-
-type Mode = 'capture' | 'ask';
+import { MessageList } from '@/components/assistant/message-list';
 
 const POLL_MS = 1500;
 
-const MODES: { value: Mode; label: string; placeholder: string; hint: string }[] = [
-  {
-    value: 'capture',
-    label: 'Записать',
-    placeholder: 'Встретил Петю, дочке 5 лет, переезжает в Дубай',
-    hint: 'Помощник разложит запись по карточке — вы увидите изменения и примените их одним кликом.',
-  },
-  {
-    value: 'ask',
-    label: 'Спросить',
-    placeholder: 'Что я хотел спросить у Пети?',
-    hint: 'Ответ — только по вашим контактам, с ссылками на карточки. Ничего не меняется.',
-  },
+const SUGGESTIONS = [
+  'Покажи, сколько у меня контактов по городам',
+  'С кем я давно не общался?',
+  'Динамика встреч по месяцам',
 ];
 
+type ActiveJob = { chatId: string; jobId: string };
+
 export default function AssistantPage() {
-  const [mode, setMode] = useState<Mode>('capture');
-  const [text, setText] = useState('');
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isApplying, setIsApplying] = useState(false);
-  const [applied, setApplied] = useState<ApplyResult | null>(null);
   const { mutate: mutateGlobal } = useSWRConfig();
-  const { data: info } = useSWR<AssistantInfo>(assistantInfoKey);
-  const { data: job, mutate: mutateJob } = useSWR<AssistantJob>(jobId ? assistantJobKey(jobId) : null, {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [text, setText] = useState('');
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
+  const [applyingJobId, setApplyingJobId] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  const [older, setOlder] = useState<ChatMessage[]>([]);
+  const [hasOlder, setHasOlder] = useState<boolean | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const { data: chats, mutate: mutateChats } = useSWR<Chat[]>(chatsKey);
+  const { data: page, mutate: mutateMessages } = useSWR<MessagePage>(activeId ? chatMessagesKey(activeId) : null);
+  const jobId = activeJob && activeJob.chatId === activeId ? activeJob.jobId : null;
+  const { data: job, mutate: mutateJob } = useSWR<AssistantJob<ChatJobResult>>(jobId ? assistantJobKey(jobId) : null, {
     refreshInterval: (latest) => (isPending(latest) || !latest ? POLL_MS : 0),
   });
 
-  const current = MODES.find((m) => m.value === mode) ?? MODES[0];
-  const busy = isSubmitting || isPending(job);
+  const messages = useMemo(() => [...older, ...(page?.items ?? [])], [older, page]);
+  const moreOlder = hasOlder ?? page?.has_more ?? false;
+  const busy = isSending || isPending(job);
+  const isEmpty = messages.length === 0 && !busy && !job;
 
-  function reset() {
-    setJobId(null);
-    setApplied(null);
-  }
+  // Ответ готов (или упал) — подтягиваем историю и список чатов (название, порядок)
+  const finishedStatus = job?.status === 'done' || job?.status === 'failed' ? job.status : null;
+  useEffect(() => {
+    if (finishedStatus) {
+      void mutateMessages();
+      void mutateChats();
+    }
+  }, [finishedStatus, jobId, mutateMessages, mutateChats]);
 
-  function switchMode(next: Mode) {
-    if (next === mode) return;
-    setMode(next);
-    reset();
-  }
+  useEffect(() => {
+    endRef.current?.scrollIntoView?.({ block: 'end' });
+  }, [messages.length, job?.status]);
 
-  async function submit(kind: Mode, value: string, force = false) {
-    setIsSubmitting(true);
-    reset();
+  const selectChat = useCallback((id: string | null) => {
+    setActiveId(id);
+    setOlder([]);
+    setHasOlder(null);
+    setText('');
+  }, []);
+
+  // Переход с «Главной»: /assistant?chat=<id>&job=<id> открывает чат и продолжает опрос ответа
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const chatId = params.get('chat');
+    const startedJob = params.get('job');
+    if (!chatId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- разовая инициализация из URL
+    setActiveId(chatId);
+    if (startedJob) setActiveJob({ chatId, jobId: startedJob });
+  }, []);
+
+  async function send(value: string) {
+    const body = value.trim();
+    if (!body || busy) return;
+    setIsSending(true);
     try {
-      const created = kind === 'capture' ? await startCapture(value, force) : await startAsk(value);
-      setJobId(created.id);
+      const chatId = activeId ?? (await createChat()).id;
+      const sent = await sendChatMessage(chatId, body);
+      if (chatId !== activeId) selectChat(chatId);
+      setActiveJob({ chatId, jobId: sent.job.id });
+      setText('');
+      await Promise.all([mutateChats(), mutateGlobal(chatMessagesKey(chatId))]);
     } catch (err) {
       toast.error(errorText(err));
     } finally {
-      setIsSubmitting(false);
+      setIsSending(false);
     }
   }
 
-  async function handleSubmit(event?: FormEvent) {
-    event?.preventDefault();
-    const value = text.trim();
-    if (!value || busy) return;
-    await submit(mode, value);
+  async function loadOlder() {
+    if (!activeId || messages.length === 0) return;
+    try {
+      const earlier = await fetchOlderMessages(activeId, messages[0].id);
+      setOlder((current) => [...earlier.items, ...current]);
+      setHasOlder(earlier.has_more);
+    } catch (err) {
+      toast.error(errorText(err));
+    }
   }
 
-  /** «Записать» получило вопрос — задать его в «Спросить» тем же текстом. */
-  async function handleAskInstead() {
-    setMode('ask');
-    await submit('ask', text.trim());
+  async function handleRename(id: string, title: string) {
+    try {
+      await renameChat(id, title);
+      await mutateChats();
+    } catch (err) {
+      toast.error(errorText(err));
+    }
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) void handleSubmit();
+  async function handleDelete(chat: Chat) {
+    if (!window.confirm(`Удалить чат «${chat.title}» вместе с сообщениями?`)) return;
+    try {
+      await deleteChat(chat.id);
+      if (chat.id === activeId) selectChat(null);
+      await mutateChats();
+    } catch (err) {
+      toast.error(errorText(err));
+    }
   }
 
   async function handleCancel() {
     if (!jobId) return;
     try {
-      await mutateJob(await cancelAssistantJob(jobId), { revalidate: false });
-      reset();
+      await mutateJob((await cancelAssistantJob(jobId)) as unknown as AssistantJob<ChatJobResult>, { revalidate: false });
     } catch (err) {
       toast.error(errorText(err));
     }
   }
 
-  async function handleApply(actions: number[], contactId: string | null, newName?: string) {
-    if (!jobId) return;
-    setIsApplying(true);
+  async function handleApply(applyJobId: string, actions: number[], contactId: string | null, newName?: string) {
+    setApplyingJobId(applyJobId);
     try {
-      const outcome = await applyCapture(jobId, actions, contactId, newName);
-      setApplied(outcome);
-      setText('');
+      await applyCapture(applyJobId, actions, contactId, newName);
+      await mutateMessages(); // блок хранит итог применения
       // Карточки, вопросы и счётчики на главной поменялись
       void mutateGlobal(
         (k) => typeof k === 'string' && (k.startsWith('/api/contacts') || k.startsWith('/api/questions') || k.startsWith('/api/home')),
@@ -128,119 +163,89 @@ export default function AssistantPage() {
     } catch (err) {
       toast.error(errorText(err));
     } finally {
-      setIsApplying(false);
+      setApplyingJobId(null);
     }
   }
 
+  const handlers = {
+    applyingJobId,
+    dismissed,
+    onApply: (id: string, actions: number[], contactId: string | null, newName?: string) =>
+      void handleApply(id, actions, contactId, newName),
+    onDiscard: (id: string) => setDismissed((current) => new Set(current).add(id)),
+  };
+
+  const composer = (
+    <Composer value={text} disabled={busy} onChange={setText} onSubmit={() => void send(text)} />
+  );
+  const footnote = <p className="mt-2 text-center text-xs text-faint">Ответы могут быть неточными — проверяйте</p>;
+
   return (
-    <Page>
-      <PageHeader
-        icon={MessageCircle}
-        title="Помощник"
-        description={
-          <>
-            {current.hint}
-            {info && <span className="text-faint"> Модель: {info.model}.</span>}
-          </>
-        }
-      />
-
-      <div className="mb-4 flex gap-1" role="tablist">
-        {MODES.map((m) => (
-          <button
-            key={m.value}
-            type="button"
-            role="tab"
-            aria-selected={mode === m.value}
-            onClick={() => switchMode(m.value)}
-            className={cn(
-              'h-7 rounded-full px-3 text-sm transition-colors',
-              mode === m.value ? 'bg-fg text-bg' : 'text-muted hover:bg-hover hover:text-fg',
-            )}
+    <div className="relative flex h-full min-h-0">
+      <section className="relative flex min-w-0 flex-1 flex-col">
+        <div className="absolute right-3 top-3 z-10">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setPanelOpen((open) => !open)}
+            aria-label={panelOpen ? 'Скрыть список чатов' : 'Показать список чатов'}
+            aria-expanded={panelOpen}
           >
-            {m.label}
-          </button>
-        ))}
-      </div>
-
-      <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-2">
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={current.placeholder}
-          maxLength={mode === 'capture' ? 2000 : 500}
-          aria-label={current.label}
-          className="min-h-24 text-[15px]"
-        />
-        <div className="flex items-center gap-3">
-          <Button type="submit" variant="primary" disabled={!text.trim() || busy}>
-            <Sparkles />
-            {mode === 'capture' ? 'Разобрать' : 'Спросить'}
+            {panelOpen ? <PanelRightClose /> : <PanelRightOpen />}
           </Button>
-          <span className="text-xs text-faint">Ctrl + Enter</span>
         </div>
-      </form>
 
-      {job && <JobStatus job={job} onCancel={handleCancel} />}
-
-      {job?.status === 'done' || job?.status === 'applied' ? (
-        job.kind === 'capture' ? (
-          (job.result as CaptureResult).suggest_ask ? (
-            <QuestionHint
-              busy={busy}
-              onAsk={() => void handleAskInstead()}
-              onRecordAnyway={() => void submit('capture', text.trim(), true)}
-            />
-          ) : (job.result as CaptureResult).mode === 'delete' ? (
-            <DeletePreview
-              key={job.id}
-              result={job.result as CaptureResult}
-              applied={applied}
-              busy={isApplying}
-              onApply={handleApply}
-              onDiscard={reset}
-            />
-          ) : (
-            <>
-              <CapturePreview
-                key={job.id}
-                result={job.result as CaptureResult}
-                applied={applied}
-                busy={isApplying}
-                onApply={handleApply}
-                onDiscard={reset}
-              />
-              <TraceDetails trace={(job.result as CaptureResult).trace} />
-            </>
-          )
+        {isEmpty ? (
+          <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 pb-16">
+            <h1 className="font-display text-5xl font-semibold tracking-tight">Помощник</h1>
+            <p className="mt-2 text-center text-muted">Спросите про контакты, посмотрите графики или запишите встречу.</p>
+            <div className="mt-8 w-full max-w-2xl">
+              {composer}
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {SUGGESTIONS.map((suggestion) => (
+                  <Pill key={suggestion} onClick={() => void send(suggestion)} disabled={busy} className="h-8">
+                    {suggestion}
+                  </Pill>
+                ))}
+              </div>
+              {footnote}
+            </div>
+          </div>
         ) : (
           <>
-            <AskAnswer result={job.result as AskResult} />
-            <TraceDetails trace={(job.result as AskResult).trace} />
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-14 sm:px-8">
+              <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+                {moreOlder && (
+                  <Button variant="ghost" size="sm" onClick={() => void loadOlder()} className="self-center">
+                    Показать более ранние
+                  </Button>
+                )}
+                <MessageList messages={messages} handlers={handlers} />
+                {job && job.status !== 'failed' && <JobStatus job={job} onCancel={() => void handleCancel()} />}
+                {job?.status === 'done' && <ChatTraceDetails trace={job.result?.trace} />}
+                <div ref={endRef} />
+              </div>
+            </div>
+            <div className="shrink-0 px-4 pb-4 sm:px-8">
+              <div className="mx-auto w-full max-w-3xl">
+                {composer}
+                {footnote}
+              </div>
+            </div>
           </>
-        )
-      ) : null}
-    </Page>
-  );
-}
+        )}
+      </section>
 
-function AskAnswer({ result }: { result: AskResult }) {
-  return (
-    <div className="rounded-md border border-line bg-surface px-4 py-3">
-      <p className="whitespace-pre-line text-[15px] leading-relaxed">{result.answer}</p>
-      {result.contacts.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {result.contacts.map((c) => (
-            <Link
-              key={c.id}
-              href={`/contacts/${c.id}`}
-              className="inline-flex h-6 items-center rounded-full border border-line px-2.5 text-sm text-muted hover:bg-hover hover:text-fg"
-            >
-              {c.name}
-            </Link>
-          ))}
-        </div>
+      {panelOpen && (
+        <ChatList
+          chats={chats ?? []}
+          activeId={activeId}
+          className="absolute inset-y-0 right-0 z-20 shadow-lg lg:static lg:shadow-none"
+          onSelect={selectChat}
+          onNew={() => selectChat(null)}
+          onRename={(id, title) => void handleRename(id, title)}
+          onDelete={(chat) => void handleDelete(chat)}
+        />
       )}
     </div>
   );

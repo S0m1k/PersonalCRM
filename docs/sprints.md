@@ -221,3 +221,15 @@
 - Домен для туннеля: есть ли свой или регистрируем новый?
 - Apple/iCloud как источник — нужен ли? (CardDAV в Sprint 9 частично закрывает телефон)
 - Next.js: App Router или Pages Router? Что для запросов к API (React Query / SWR)?
+
+## ИИ-помощник 2.0 (W1-6): чаты, графики, аналитика, досье
+
+Сделано:
+- **Чаты** (`chats`, `chat_messages` в базе пользователя): список, создание, переименование, удаление, история с пагинацией — `/api/assistant/chats`. Название — из первого сообщения. Сообщение → задача `chat` в очереди; `/ask` и `/capture` работают как раньше.
+- **Контекст:** сводка старых сообщений (`chat.summary`, `summary_upto` — сколько первых сообщений она покрывает) + последние `CHAT_CONTEXT_MESSAGES` (12). Сводка пересчитывается пачками по `CHAT_SUMMARY_BATCH` сообщений.
+- **Выбор пути** правилами (`ai/chat.py: route_message`): запись → быстрый захват (блок `capture_preview`, применение через `/jobs/{id}/apply`), вопрос или просьба показать цифры → «план → выполнение → вывод» (до 3 инструментов, параметры проверяются строго, цифры графиков и таблиц берутся из базы, не от модели).
+- **Инструменты аналитики** (`ai/analytics.py`, реестр `ANALYTICS_TOOLS` — пригодится MCP-серверу): `count_contacts_by`, `interactions_over_time`, `birthdays_by_month`, `contacts_added_over_time`, `top_contacts_by_interactions`, `stale_contacts`. Коллекции `interactions` и `groups` читаются защитно: без них ряды пустые.
+- **Блоки** ответа: `text`, `chart` (bar/line/pie, ≤100 точек), `table` (≤200 строк), `contacts`, `capture_preview`.
+- **Досье контакта:** `POST/GET /api/assistant/dossier/{contact_id}` (задача `dossier`, результат в коллекции `dossiers`), клиент — `lib/api-assistant.ts`.
+- **Фронтенд:** страница помощника — чат с панелью чатов справа, блоки в `components/assistant/blocks/` (recharts).
+- **Оценка:** в `backend/evals` добавлены случаи `kind: tools` — выбор инструмента на типичных вопросах.

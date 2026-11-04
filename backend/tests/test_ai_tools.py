@@ -130,6 +130,44 @@ class TestNotesAndQuestions:
         assert {"key": "city", "label": "Город", "value": "Москва"} in card["fields"]
 
 
+class TestCardContext:
+    async def test_card_has_tags_groups_description_and_social(self, db):
+        from datetime import datetime, timezone
+
+        from app.models.group import GroupCreate
+        from app.repositories import groups as groups_repo
+
+        group = await groups_repo.create_group(db, GroupCreate(name="Клуб бега"))
+        petr = await _contact(
+            db,
+            first_name="Пётр",
+            description="Бегает по утрам",
+            tags=["друг", "бег"],
+            group_ids=[group.id, "64b000000000000000000000"],
+            keep_in_touch={"frequency_days": 14},
+            social={"telegram": "@petr"},
+        )
+        stamp = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+        await contacts_repo.set_last_interaction(db, petr.id, stamp)
+
+        card = await tools.get_contact(db, petr.id)
+
+        assert card["description"] == "Бегает по утрам"
+        assert card["tags"] == ["друг", "бег"]
+        assert card["groups"] == ["Клуб бега"]  # несуществующая группа пропущена
+        assert card["keep_in_touch_days"] == 14
+        assert card["social"] == {"telegram": "@petr"}
+        assert card["last_interaction_at"].startswith("2026-10-01T12:00:00")
+
+    async def test_plain_contact_card_has_empty_context(self, db):
+        petr = await _contact(db, first_name="Пётр")
+
+        card = await tools.get_contact(db, petr.id)
+
+        assert card["tags"] == [] and card["groups"] == [] and card["social"] == {}
+        assert card["last_interaction_at"] is None and card["keep_in_touch_days"] is None
+
+
 class TestNames:
     def test_nickname_variants(self):
         assert tools.name_variants("Петя") == ["Пётр"]

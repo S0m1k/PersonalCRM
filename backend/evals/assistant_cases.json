@@ -289,5 +289,173 @@
         "Анюта"
       ]
     }
+  },
+  {
+    "name": "tools-by-city",
+    "kind": "tools",
+    "question": "Покажи, сколько у меня контактов по городам",
+    "expect": {
+      "tools": [
+        "count_contacts_by"
+      ],
+      "params": {
+        "count_contacts_by": {
+          "field": "city"
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-by-company-pie",
+    "kind": "tools",
+    "question": "Круговая диаграмма контактов по компаниям",
+    "expect": {
+      "tools": [
+        "count_contacts_by"
+      ],
+      "params": {
+        "count_contacts_by": {
+          "field": "company",
+          "chart": "pie"
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-stale",
+    "kind": "tools",
+    "question": "С кем я давно не общался?",
+    "expect": {
+      "tools": [
+        "stale_contacts"
+      ],
+      "params": {
+        "stale_contacts": {}
+      }
+    }
+  },
+  {
+    "name": "tools-stale-days",
+    "kind": "tools",
+    "question": "Кому я не писал больше полугода?",
+    "expect": {
+      "tools": [
+        "stale_contacts"
+      ],
+      "params": {
+        "stale_contacts": {
+          "days": 180
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-meetings-month",
+    "kind": "tools",
+    "question": "Динамика встреч по месяцам",
+    "expect": {
+      "tools": [
+        "interactions_over_time"
+      ],
+      "params": {
+        "interactions_over_time": {
+          "period": "month"
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-birthdays",
+    "kind": "tools",
+    "question": "В каких месяцах больше всего дней рождения?",
+    "expect": {
+      "tools": [
+        "birthdays_by_month"
+      ],
+      "params": {
+        "birthdays_by_month": {}
+      }
+    }
+  },
+  {
+    "name": "tools-growth",
+    "kind": "tools",
+    "question": "Как росла моя база по неделям?",
+    "expect": {
+      "tools": [
+        "contacts_added_over_time"
+      ],
+      "params": {
+        "contacts_added_over_time": {
+          "period": "week"
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-top",
+    "kind": "tools",
+    "question": "С кем я общаюсь чаще всего?",
+    "expect": {
+      "tools": [
+        "top_contacts_by_interactions"
+      ],
+      "params": {
+        "top_contacts_by_interactions": {}
+      }
+    }
+  },
+  {
+    "name": "tools-none-for-person",
+    "kind": "tools",
+    "question": "Где живёт Пётр?",
+    "expect": {
+      "tools": []
+    }
+  },
+  {
+    "name": "tools-who-in-city",
+    "kind": "tools",
+    "question": "Кто в Санкт-Петербурге?",
+    "expect": {
+      "tools": [
+        "find_contacts"
+      ],
+      "params": {
+        "find_contacts": {
+          "field": "city"
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-who-in-company",
+    "kind": "tools",
+    "question": "Кто работает в Яндексе?",
+    "expect": {
+      "tools": [
+        "find_contacts"
+      ],
+      "params": {
+        "find_contacts": {
+          "field": "company"
+        }
+      }
+    }
+  },
+  {
+    "name": "tools-find-by-nickname-city",
+    "kind": "tools",
+    "question": "Найди людей из Питера",
+    "expect": {
+      "tools": [
+        "find_contacts"
+      ],
+      "params": {
+        "find_contacts": {
+          "field": "city"
+        }
+      }
+    }
   }
 ]

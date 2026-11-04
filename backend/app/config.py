@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # Потолок числа аккаунтов: открытая регистрация не должна забить сервер базами
     max_users: int = 50
 
+    # Геокодирование адресов контактов и поиск мест на карте через Nominatim (OpenStreetMap).
+    # Выключено — /api/geo/* отвечают 503 и наружу ничего не уходит.
+    geocoding_enabled: bool = True
+
     # Регион для номеров без кода страны: 89215535333 → +79215535333 (см. services/phones.py)
     default_phone_region: str = "RU"
 
@@ -97,6 +101,12 @@ class Settings(BaseSettings):
     llm_fallback: str = ""
     anthropic_api_key: Optional[str] = None
     anthropic_model: str = "claude-haiku-5-5"
+    # Чаты помощника: сколько последних сообщений уходит в модель дословно (старше — в сводке)
+    chat_context_messages: int = 12
+    # Сводка старых сообщений пересчитывается пачками, а не на каждое сообщение
+    chat_summary_batch: int = 6
+    chat_max_per_user: int = 200
+    chat_max_messages: int = 2000
 
     # Очередь задач ИИ (arq поверх REDIS_URL)
     ai_concurrency: int = 1           # одновременных запросов к модели (GPU 8 ГБ — одна-две)

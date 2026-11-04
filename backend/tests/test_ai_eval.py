@@ -15,7 +15,7 @@ def test_cases_are_well_formed():
 
     assert len({c["name"] for c in cases}) == len(cases)
     for case in cases:
-        assert case["kind"] in ("capture", "ask")
+        assert case["kind"] in ("capture", "ask", "tools")
         assert case.get("text") or case.get("question")
         assert case["expect"]
 

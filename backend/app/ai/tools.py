@@ -19,6 +19,7 @@ from ..models.question import QuestionCreate, QuestionOut, QuestionUpdate
 from ..models.template import FieldDef
 from ..repositories import contacts as contacts_repo
 from ..repositories import events as events_repo
+from ..repositories import groups as groups_repo
 from ..repositories import questions as questions_repo
 from ..repositories import templates as templates_repo
 from ..services import phones
@@ -176,8 +177,22 @@ async def get_contact(db: AsyncIOMotorDatabase, contact_id: str) -> dict:
         "emails": [{"value": e.value, "label": e.label} for e in contact.emails],
         "relationships": await _relationships(db, contact),
         "priority": contact.priority,
+        **await _crm_context(db, contact),
         "open_questions": [{"id": q.id, "text": q.text} for q in questions],
         "notes": contact.notes[-NOTES_CONTEXT:],
+    }
+
+
+async def _crm_context(db: AsyncIOMotorDatabase, contact: ContactOut) -> dict:
+    """Теги, группы (названиями), описание, последнее общение, частота и соцсети — только для чтения."""
+    group_names = await groups_repo.names_by_id(db, contact.group_ids)
+    return {
+        "description": contact.description,
+        "tags": contact.tags,
+        "groups": [group_names[g] for g in contact.group_ids if g in group_names],
+        "last_interaction_at": contact.last_interaction_at.isoformat() if contact.last_interaction_at else None,
+        "keep_in_touch_days": contact.keep_in_touch.frequency_days,
+        "social": {k: v for k, v in contact.social.model_dump().items() if v},
     }
 
 

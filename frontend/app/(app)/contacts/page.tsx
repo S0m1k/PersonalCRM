@@ -1,185 +1,287 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import useSWR from 'swr';
-import { Building2, CircleHelp, MapPin, Phone, Plus, Search, SearchX, SlidersHorizontal, Type, UserPlus, Users, X } from 'lucide-react';
-import type { Contact, Template } from '@/lib/api';
-import { cn, fullName, relativeTime } from '@/lib/utils';
-import { Avatar } from '@/components/app/avatar';
-import { TemplateIcon } from '@/components/app/icons';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import useSWR, { useSWRConfig } from 'swr';
+import useSWRInfinite from 'swr/infinite';
+import { toast } from 'sonner';
+import { Plus, SearchX, UserPlus } from 'lucide-react';
+import { deleteContact, updateContact, type Contact, type ContactUpdate } from '@/lib/api';
+import { groupsKey, tagsKey, type Group, type TagCount } from '@/lib/api-crm';
+import { createView, updateView, viewsKey, type ContactView } from '@/lib/api-views';
+import {
+  DEFAULT_COLUMNS,
+  FILTER_KEYS,
+  activeFilterCount,
+  parseState,
+  stateToParams,
+  stateToQuery,
+  type ColumnId,
+  type FilterKey,
+  type ListState,
+} from '@/lib/contact-view';
+import { errorText, plural } from '@/lib/utils';
 import { useAppActions } from '@/components/app/app-shell';
-import { EmptyState, Page, PageHeader, Skeleton } from '@/components/app/page';
+import { EmptyState, Page, Skeleton } from '@/components/app/page';
+import { BulkBar } from '@/components/contacts/bulk-bar';
+import { ContactsTable } from '@/components/contacts/contacts-table';
+import { ContactsToolbar } from '@/components/contacts/contacts-toolbar';
+import { SaveViewDialog } from '@/components/contacts/save-view-dialog';
 import { Button } from '@/components/ui/button';
-import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from '@/components/ui/overlays';
-import { Tag } from '@/components/ui/tag';
 
-const PAGE_SIZE = 200;
-
-function useDebounced(value: string, delay: number): string {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
-}
+const PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 250;
 
 export default function ContactsPage() {
+  return (
+    <Suspense fallback={<Page wide><Skeleton className="h-64" /></Page>}>
+      <ContactsList />
+    </Suspense>
+  );
+}
+
+function ContactsList() {
   const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const { mutate: mutateGlobal } = useSWRConfig();
   const { newContact } = useAppActions();
-  const [query, setQuery] = useState('');
-  const [templateId, setTemplateId] = useState<string | null>(null);
-  const q = useDebounced(query.trim(), 200);
 
-  const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
-  if (q) params.set('q', q);
-  if (templateId) params.set('template_id', templateId);
+  const viewId = params.get('view');
+  const { data: views = [] } = useSWR<ContactView[]>(viewsKey());
+  const { data: groups = [] } = useSWR<Group[]>(groupsKey());
+  const { data: tags = [] } = useSWR<TagCount[]>(tagsKey());
+  const activeView = views.find((v) => v.id === viewId);
 
-  const { data: contacts, isLoading } = useSWR<Contact[]>(`/api/contacts/?${params}`, { keepPreviousData: true });
-  const { data: templates = [] } = useSWR<Template[]>('/api/templates');
-  const { data: openCounts = {} } = useSWR<Record<string, number>>('/api/questions/open-counts');
+  const state = useMemo(() => parseState(new URLSearchParams(params.toString()), activeView), [params, activeView]);
+  const columns = (state.columns ?? DEFAULT_COLUMNS) as ColumnId[];
+  const groupsById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
 
-  const templatesById = useMemo(() => new Map(templates.map((t) => [t.id, t])), [templates]);
-  const activeTemplate = templateId ? templatesById.get(templateId) : undefined;
-  const isFiltered = Boolean(q || templateId);
+  const go = useCallback(
+    (next: ListState) => {
+      const qs = stateToParams(next, viewId).toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, viewId],
+  );
+
+  // Поиск: локальный текст, в URL уходит с задержкой
+  const [searchText, setSearchText] = useState(state.q);
+  useEffect(() => setSearchText(state.q), [state.q]);
+  useEffect(() => {
+    if (searchText.trim() === state.q) return;
+    const id = setTimeout(() => go({ ...state, q: searchText.trim() }), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [searchText, state, go]);
+
+  const query = stateToQuery(state).toString();
+  const {
+    data: pages,
+    size,
+    setSize,
+    isLoading,
+    isValidating,
+    mutate: mutateList,
+  } = useSWRInfinite<Contact[]>(
+    (index, previous) => (previous && previous.length < PAGE_SIZE ? null : `/api/contacts/?${query}${query ? '&' : ''}limit=${PAGE_SIZE}&skip=${index * PAGE_SIZE}`),
+    { revalidateFirstPage: false, keepPreviousData: true },
+  );
+  const { data: total } = useSWR<{ count: number }>(`/api/contacts/count${query ? `?${query}` : ''}`);
+  const contacts = useMemo(() => pages?.flat(), [pages]);
+  const hasMore = Boolean(pages && pages[pages.length - 1]?.length === PAGE_SIZE);
+
+  const refreshAll = useCallback(async () => {
+    await mutateList();
+    void mutateGlobal((key) => typeof key === 'string' && (key.startsWith('/api/contacts/count') || key.startsWith('/api/home') || key === groupsKey() || key === tagsKey()));
+  }, [mutateList, mutateGlobal]);
+
+  // ---- выбор и массовые действия
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [isBusy, setIsBusy] = useState(false);
+  useEffect(() => setSelected(new Set()), [query]);
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelected((prev) => (contacts && contacts.every((c) => prev.has(c.id)) ? new Set() : new Set(contacts?.map((c) => c.id))));
+
+  async function handleUpdate(id: string, patch: ContactUpdate) {
+    try {
+      await updateContact(id, patch);
+      await refreshAll();
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  }
+
+  async function runBulk(label: string, change: (c: Contact) => ContactUpdate | null) {
+    const targets = (contacts ?? []).filter((c) => selected.has(c.id));
+    setIsBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        targets.map((c) => {
+          const patch = change(c);
+          return patch ? updateContact(c.id, patch) : Promise.resolve(null);
+        }),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed) toast.error(`${label}: не удалось у ${failed} из ${targets.length}`);
+      else toast.success(`${label}: ${targets.length} ${plural(targets.length, 'контакт', 'контакта', 'контактов')}`);
+      await refreshAll();
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function bulkDelete() {
+    const ids = [...selected];
+    setIsBusy(true);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => deleteContact(id)));
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed) toast.error(`Не удалось удалить ${failed} из ${ids.length}`);
+      else toast.success(`Удалено: ${ids.length}`);
+      setSelected(new Set());
+      await refreshAll();
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  // ---- фильтры, виды
+  const setFilter = (key: FilterKey, value: string) => {
+    const filters = { ...state.filters };
+    if (value) filters[key] = value;
+    else delete filters[key];
+    go({ ...state, filters });
+  };
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  useEffect(() => {
+    if (params.get('newview')) {
+      setIsViewDialogOpen(true);
+      const rest = new URLSearchParams(params.toString());
+      rest.delete('newview');
+      router.replace(rest.toString() ? `${pathname}?${rest}` : pathname);
+    }
+  }, [params, pathname, router]);
+
+  const viewPayload = () => ({
+    filters: Object.fromEntries(FILTER_KEYS.filter((k) => state.filters[k]).map((k) => [k, state.filters[k] as string])),
+    sort: state.sort,
+    columns: state.columns ?? [],
+  });
+
+  async function saveView(name: string, emoji: string) {
+    try {
+      const view = await createView({ name, emoji, ...viewPayload() });
+      await mutateGlobal(viewsKey());
+      router.push(`${pathname}?view=${view.id}`);
+    } catch (err) {
+      toast.error(errorText(err));
+      throw err;
+    }
+  }
+
+  async function overwriteView() {
+    if (!activeView) return;
+    try {
+      await updateView(activeView.id, viewPayload());
+      await mutateGlobal(viewsKey());
+      toast.success(`Вид «${activeView.name}» обновлён`);
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  }
+
+  const group = state.filters.group ? groupsById.get(state.filters.group) : undefined;
+  const title = activeView ? activeView.name : group ? group.name : 'Все контакты';
+  const isFiltered = Boolean(state.q || activeFilterCount(state));
+  const count = total?.count ?? contacts?.length ?? 0;
 
   return (
     <Page wide>
-      <PageHeader
-        icon={Users}
-        title="Контакты"
-        actions={
-          <Button variant="primary" onClick={() => newContact(query.trim())}>
-            <Plus /> Новый
-          </Button>
-        }
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-up">
+        <div>
+          <h1 className="font-display text-title">{title}</h1>
+          <p className="mt-1 text-[13px] text-muted tabular">
+            {count} {plural(count, 'контакт', 'контакта', 'контактов')}
+          </p>
+        </div>
+        <Button variant="primary" onClick={() => newContact(state.q)}>
+          <Plus /> Добавить контакт
+        </Button>
+      </header>
+
+      <ContactsToolbar
+        state={state}
+        views={views}
+        activeView={activeView}
+        groups={groups}
+        tags={tags}
+        searchText={searchText}
+        onSearchText={setSearchText}
+        onFilter={setFilter}
+        onClearFilters={() => go({ ...state, filters: {} })}
+        onSort={(sort) => go({ ...state, sort })}
+        onColumns={(cols) => go({ ...state, columns: cols })}
+        onSelectView={(id) => router.push(id ? `${pathname}?view=${id}` : pathname)}
+        onNewView={() => setIsViewDialogOpen(true)}
+        onUpdateView={overwriteView}
       />
 
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <label className="relative flex h-8 min-w-[220px] flex-1 items-center sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 size-4 text-faint" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Имя, компания, почта, телефон"
-            className="h-full w-full rounded bg-transparent pl-8 pr-2 text-sm outline-none placeholder:text-faint hover:bg-hover focus-visible:bg-hover"
-          />
-        </label>
-        <Menu>
-          <MenuTrigger asChild>
-            <Button variant="ghost" size="sm" className={cn(activeTemplate && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent')}>
-              <SlidersHorizontal />
-              {activeTemplate ? (
-                <>
-                  <TemplateIcon name={activeTemplate.icon} /> {activeTemplate.name}
-                </>
-              ) : (
-                'Шаблон'
-              )}
-            </Button>
-          </MenuTrigger>
-          <MenuContent align="start">
-            <MenuLabel>Показать только</MenuLabel>
-            {templates.map((t) => (
-              <MenuItem key={t.id} onSelect={() => setTemplateId(t.id)}>
-                <TemplateIcon name={t.icon} /> {t.name}
-              </MenuItem>
-            ))}
-            {templateId && (
-              <>
-                <MenuSeparator />
-                <MenuItem onSelect={() => setTemplateId(null)}>
-                  <X /> Сбросить фильтр
-                </MenuItem>
-              </>
-            )}
-          </MenuContent>
-        </Menu>
-        <span className="ml-auto text-xs text-faint tabular">
-          {contacts ? `${contacts.length}${contacts.length === PAGE_SIZE ? '+' : ''}` : ''}
-        </span>
-      </div>
-
-      <div className="overflow-x-auto border-t border-line">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
-          <thead>
-            <tr className="text-left text-[13px] text-muted [&>th]:h-8 [&>th]:border-b [&>th]:border-line [&>th]:px-2 [&>th]:font-normal">
-              <th className="w-[30%]">
-                <span className="flex items-center gap-1.5"><Type className="size-3.5" /> Имя</span>
-              </th>
-              <th>Шаблон</th>
-              <th>
-                <span className="flex items-center gap-1.5"><Building2 className="size-3.5" /> Компания</span>
-              </th>
-              <th>
-                <span className="flex items-center gap-1.5"><MapPin className="size-3.5" /> Город</span>
-              </th>
-              <th>
-                <span className="flex items-center gap-1.5"><Phone className="size-3.5" /> Телефон</span>
-              </th>
-              <th className="w-12 text-center">
-                <CircleHelp className="mx-auto size-3.5" aria-label="Открытые вопросы" />
-              </th>
-              <th className="w-28 text-right">Изменён</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && !contacts
-              ? Array.from({ length: 6 }, (_, i) => (
-                  <tr key={i}>
-                    <td colSpan={7} className="border-b border-line px-2 py-1.5">
-                      <Skeleton className="h-6" />
-                    </td>
-                  </tr>
-                ))
-              : contacts?.map((c) => {
-                  const name = fullName(c) || 'Без имени';
-                  const template = c.template_id ? templatesById.get(c.template_id) : undefined;
-                  const open = openCounts[c.id] ?? 0;
-                  return (
-                    <tr
-                      key={c.id}
-                      onClick={() => router.push(`/contacts/${c.id}`)}
-                      className="group cursor-pointer transition-colors hover:bg-hover/60 [&>td]:h-10 [&>td]:border-b [&>td]:border-line [&>td]:px-2"
-                    >
-                      <td>
-                        <span className="flex items-center gap-2.5">
-                          <Avatar name={name} size="md" />
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium group-hover:underline group-hover:decoration-line group-hover:underline-offset-4">
-                              {name}
-                            </span>
-                            {c.position && <span className="block truncate text-xs text-muted">{c.position}</span>}
-                          </span>
-                        </span>
-                      </td>
-                      <td>{template ? <Tag color="gray"><TemplateIcon name={template.icon} className="size-3" /> {template.name}</Tag> : <span className="text-faint">—</span>}</td>
-                      <td className="max-w-[200px] truncate">{c.company || <span className="text-faint">—</span>}</td>
-                      <td className="truncate">{c.city || <span className="text-faint">—</span>}</td>
-                      <td className="whitespace-nowrap tabular text-muted">{c.phones[0]?.value ?? <span className="text-faint">—</span>}</td>
-                      <td className="text-center">{open ? <Tag color="blue">{open}</Tag> : null}</td>
-                      <td className="text-right text-xs text-muted">{relativeTime(c.updated_at)}</td>
-                    </tr>
-                  );
-                })}
-          </tbody>
-        </table>
-      </div>
+      <ContactsTable
+        contacts={contacts}
+        isLoading={isLoading}
+        columns={columns}
+        groupsById={groupsById}
+        selected={selected}
+        onToggle={toggle}
+        onToggleAll={toggleAll}
+        onUpdate={handleUpdate}
+      />
 
       {contacts && contacts.length === 0 && (
         <div className="mt-6">
           {isFiltered ? (
             <EmptyState icon={SearchX} title="Ничего не нашлось">
-              Попробуйте другой запрос или сбросьте фильтр шаблона.
+              Попробуйте другой запрос или сбросьте фильтры.
             </EmptyState>
           ) : (
             <EmptyState icon={UserPlus} title="Контактов пока нет">
-              Подключите Outlook или Google в «Синхронизации», загрузите файл в «Импорте» или нажмите «Новый».
+              Подключите Outlook или Google в «Синхронизации», загрузите файл в «Импорте» или нажмите «Добавить контакт».
             </EmptyState>
           )}
         </div>
       )}
+
+      {hasMore && (
+        <div className="mt-4 flex justify-center">
+          <Button variant="outline" onClick={() => setSize(size + 1)} disabled={isValidating}>
+            {isValidating ? 'Загружаю…' : 'Показать ещё'}
+          </Button>
+        </div>
+      )}
+
+      {selected.size > 0 && (
+        <BulkBar
+          count={selected.size}
+          groups={groups}
+          tags={tags}
+          isBusy={isBusy}
+          onClear={() => setSelected(new Set())}
+          onAddTag={(tag) => runBulk('Тег добавлен', (c) => (c.tags.some((t) => t.toLowerCase() === tag.toLowerCase()) ? null : { tags: [...c.tags, tag] }))}
+          onAddGroup={(gid) => runBulk('Добавлено в группу', (c) => (c.group_ids.includes(gid) ? null : { group_ids: [...c.group_ids, gid] }))}
+          onFrequency={(days) => runBulk('Частота задана', (c) => ({ keep_in_touch: { frequency_days: days, snoozed_until: c.keep_in_touch.snoozed_until } }))}
+          onPriority={(level) => runBulk('Приоритет задан', () => ({ priority: level }))}
+          onDelete={bulkDelete}
+        />
+      )}
+
+      <SaveViewDialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen} onSave={saveView} />
     </Page>
   );
 }

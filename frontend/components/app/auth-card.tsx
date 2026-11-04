@@ -16,14 +16,14 @@ export function AuthCard({
     <main className="flex min-h-dvh items-center justify-center bg-sidebar px-4">
       <div className="w-full max-w-[340px] animate-fade-up">
         <div className="mb-8 text-center">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-lg bg-fg font-serif text-2xl font-bold italic text-bg">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-xl bg-accent font-display text-3xl font-semibold text-accent-fg">
             P
           </span>
-          <h1 className="text-xl font-semibold tracking-tight">PersonalCRM</h1>
+          <h1 className="font-display text-3xl font-semibold">PersonalCRM</h1>
           <p className="mt-1 text-sm text-muted">{subtitle}</p>
         </div>
 
-        <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-lg bg-surface p-5 shadow-pop">
+        <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-6 shadow-md">
           {children}
         </form>
 

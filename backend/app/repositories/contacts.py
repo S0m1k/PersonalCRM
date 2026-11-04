@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from bson import ObjectId
@@ -20,6 +20,17 @@ from ..models.contact import ContactCreate, ContactOut, ContactUpdate, Phone
 from ..services import phones
 
 COLLECTION = "contacts"
+
+# Поля, которые можно очистить явным null в PATCH (у остальных None означает «не менять»)
+NULLABLE_FIELDS = ("first_met_at", "location", "importance", "closeness")
+
+# sort= в списке контактов → ключи сортировки Mongo
+SORTS: dict[str, list[tuple[str, int]]] = {
+    "last_interaction": [("last_interaction_at", -1), ("updated_at", -1)],
+    "name": [("first_name", 1), ("last_name", 1)],
+    "created": [("created_at", -1)],
+    "importance": [("importance", -1), ("updated_at", -1)],
+}
 
 
 def _utcnow() -> datetime:
@@ -91,31 +102,31 @@ async def get_contacts_by_ids(db: AsyncIOMotorDatabase, contact_ids: list[str]) 
     return [ContactOut.from_mongo(d) for d in docs]
 
 
-async def list_contacts(
-    db: AsyncIOMotorDatabase,
+def build_query(
     q: Optional[str] = None,
     category: Optional[str] = None,
     priority: Optional[str] = None,
     template_id: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 50,
-) -> list[ContactOut]:
-    """
-    Список контактов с поиском и фильтрацией.
-
-    - q: поиск по имени, фамилии, компании, email, телефону (регексп, без учёта регистра;
-      номер сравнивается по ключу из services/phones.py, формат записи не важен)
-    - category / priority: точная фильтрация по полю
-    - skip / limit: пагинация
-    """
-    query: dict = {}
+    tag: Optional[str] = None,
+    group_id: Optional[str] = None,
+    has_location: Optional[bool] = None,
+    has_frequency: Optional[bool] = None,
+    has_priority: Optional[bool] = None,
+    has_birthday: Optional[bool] = None,
+    has_place: Optional[bool] = None,
+    source: Optional[str] = None,
+    inactive_days: Optional[int] = None,
+    now: Optional[datetime] = None,
+) -> dict:
+    """Фильтр Mongo для списка контактов; условия соединяются через $and."""
+    clauses: list[dict] = []
 
     if q:
         # Поиск по нескольким полям через $or + $regex.
         # re.escape — чтобы спецсимволы (например "+" в телефоне) трактовались
         # буквально, а не как regex; заодно закрывает regex-инъекцию.
         pattern = {"$regex": re.escape(q), "$options": "i"}
-        query["$or"] = [
+        any_of: list[dict] = [
             {"first_name": pattern},
             {"last_name": pattern},
             {"company": pattern},
@@ -125,26 +136,90 @@ async def list_contacts(
         # Номер в любой записи: 89215535333 найдёт и «+7 921 553-53-33»
         phone_pattern = phones.search_pattern(q)
         if phone_pattern:
-            query["$or"].append({"phones.normalized": {"$regex": phone_pattern}})
+            any_of.append({"phones.normalized": {"$regex": phone_pattern}})
+        clauses.append({"$or": any_of})
 
     if category:
-        query["category"] = category
-
+        clauses.append({"category": category})
     if priority:
-        query["priority"] = priority
-
+        clauses.append({"priority": priority})
     if template_id:
-        query["template_id"] = template_id
+        clauses.append({"template_id": template_id})
+    if tag:
+        clauses.append({"tags": {"$regex": f"^{re.escape(tag.strip())}$", "$options": "i"}})
+    if group_id:
+        clauses.append({"group_ids": group_id})
+    if source:
+        clauses.append({"$or": [{"source": source}, {"sources": source}]})
 
+    if has_location is True:
+        clauses.append({"location": {"$ne": None}})
+    elif has_location is False:
+        clauses.append({"location": None})
+
+    if has_frequency is True:
+        clauses.append({"keep_in_touch.frequency_days": {"$ne": None}})
+    elif has_frequency is False:
+        clauses.append({"keep_in_touch.frequency_days": None})
+
+    # Приоритет не задан — пустая строка или поля нет; «none» («Нет») — выбранное значение
+    if has_priority is True:
+        clauses.append({"priority": {"$nin": ["", None]}})
+    elif has_priority is False:
+        clauses.append({"priority": {"$in": ["", None]}})
+
+    if has_birthday is True:
+        clauses.append({"birthday": {"$nin": ["", None]}})
+    elif has_birthday is False:
+        clauses.append({"birthday": {"$in": ["", None]}})
+
+    # «Место» — адрес, город или метка координат
+    place_fields = ({"address": {"$nin": ["", None]}}, {"city": {"$nin": ["", None]}}, {"location": {"$ne": None}})
+    if has_place is True:
+        clauses.append({"$or": list(place_fields)})
+    elif has_place is False:
+        clauses.append({"address": {"$in": ["", None]}})
+        clauses.append({"city": {"$in": ["", None]}})
+        clauses.append({"location": None})
+
+    if inactive_days is not None:
+        threshold = (now or _utcnow()) - timedelta(days=inactive_days)
+        clauses.append({"$or": [{"last_interaction_at": None}, {"last_interaction_at": {"$lt": threshold}}]})
+
+    if not clauses:
+        return {}
+    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+
+
+async def list_contacts(
+    db: AsyncIOMotorDatabase,
+    sort: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
+    **filters,
+) -> list[ContactOut]:
+    """
+    Список контактов с поиском и фильтрацией (параметры фильтров — см. build_query).
+
+    - q: поиск по имени, фамилии, компании, email, телефону (без учёта регистра;
+      номер сравнивается по ключу из services/phones.py, формат записи не важен)
+    - sort: last_interaction | name | created | importance (по умолчанию — по updated_at)
+    - skip / limit: пагинация
+    """
     cursor = (
         db[COLLECTION]
-        .find(query)
-        .sort("updated_at", -1)
+        .find(build_query(**filters))
+        .sort(SORTS.get(sort or "", [("updated_at", -1)]))
         .skip(skip)
         .limit(limit)
     )
     docs = await cursor.to_list(length=limit)
     return [ContactOut.from_mongo(doc) for doc in docs]
+
+
+async def count_contacts(db: AsyncIOMotorDatabase, **filters) -> int:
+    """Сколько контактов подходит под те же фильтры, что и в list_contacts."""
+    return await db[COLLECTION].count_documents(build_query(**filters))
 
 
 async def update_contact(
@@ -163,6 +238,10 @@ async def update_contact(
 
     # Берём только явно переданные поля (exclude_none=True)
     changes = data.model_dump(mode="python", exclude_none=True)
+    # Явный null очищает только «обнуляемые» поля
+    for name in NULLABLE_FIELDS:
+        if name in data.model_fields_set and getattr(data, name) is None:
+            changes[name] = None
     if not changes:
         # Нечего обновлять — вернём текущее состояние
         return await get_contact_by_id(db, contact_id)
@@ -213,3 +292,70 @@ async def backfill_phone_keys(db: AsyncIOMotorDatabase) -> int:
         await db[COLLECTION].update_one({"_id": doc["_id"]}, {"$set": {"phones": phones}})
         fixed += 1
     return fixed
+
+
+# ---------------------------------------------------------------------------
+# Sprint 11: служебные операции над контактами
+# ---------------------------------------------------------------------------
+
+
+async def set_last_interaction(db: AsyncIOMotorDatabase, contact_id: str, value: Optional[datetime]) -> None:
+    """
+    Записать last_interaction_at. updated_at не трогаем: это служебное значение,
+    синхронизацию с провайдерами оно не запускает.
+    """
+    oid = _parse_oid(contact_id)
+    if oid is not None:
+        await db[COLLECTION].update_one({"_id": oid}, {"$set": {"last_interaction_at": value}})
+
+
+async def remove_group(db: AsyncIOMotorDatabase, group_id: str) -> int:
+    """Группа удалена — убрать её id у всех контактов. Возвращает число затронутых контактов."""
+    result = await db[COLLECTION].update_many({"group_ids": group_id}, {"$pull": {"group_ids": group_id}})
+    return result.modified_count
+
+
+async def count_by_group(db: AsyncIOMotorDatabase) -> dict[str, int]:
+    """{group_id: число контактов}."""
+    counts: dict[str, int] = {}
+    async for doc in db[COLLECTION].find({"group_ids.0": {"$exists": True}}, {"group_ids": 1}):
+        for gid in doc.get("group_ids") or []:
+            counts[gid] = counts.get(gid, 0) + 1
+    return counts
+
+
+async def tag_counts(db: AsyncIOMotorDatabase) -> list[dict]:
+    """Теги с числом контактов; регистр — самое частое написание, сортировка по числу и имени."""
+    by_key: dict[str, dict] = {}
+    async for doc in db[COLLECTION].find({"tags.0": {"$exists": True}}, {"tags": 1}):
+        for tag in doc.get("tags") or []:
+            entry = by_key.setdefault(tag.casefold(), {"spellings": {}, "count": 0})
+            entry["count"] += 1
+            entry["spellings"][tag] = entry["spellings"].get(tag, 0) + 1
+    result = [
+        {"tag": max(e["spellings"], key=lambda t: (e["spellings"][t], t)), "count": e["count"]}
+        for e in by_key.values()
+    ]
+    return sorted(result, key=lambda r: (-r["count"], r["tag"].casefold()))
+
+
+async def rewrite_tag(db: AsyncIOMotorDatabase, old: str, new: Optional[str]) -> int:
+    """
+    Переименовать / слить тег (new) или удалить его у всех контактов (new=None).
+    Совпадение без учёта регистра; результат нормализуется как обычный список тегов.
+    Возвращает число изменённых контактов.
+    """
+    from ..models.contact import normalize_labels
+
+    key = old.strip().casefold()
+    changed = 0
+    async for doc in db[COLLECTION].find({"tags.0": {"$exists": True}}, {"tags": 1}):
+        tags = doc.get("tags") or []
+        if not any(t.casefold() == key for t in tags):
+            continue
+        rewritten = [new if t.casefold() == key else t for t in tags]
+        if new is None:
+            rewritten = [t for t in tags if t.casefold() != key]
+        await db[COLLECTION].update_one({"_id": doc["_id"]}, {"$set": {"tags": normalize_labels(rewritten)}})
+        changed += 1
+    return changed
