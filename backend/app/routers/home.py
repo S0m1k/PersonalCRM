@@ -17,6 +17,7 @@ from ..repositories import groups as groups_repo
 from ..repositories import interactions as interactions_repo
 from ..repositories import keep_in_touch as keep_in_touch_repo
 from ..repositories import questions as questions_repo
+from ..repositories import reminders as reminders_repo
 from ..services.birthdays import upcoming_birthdays
 
 router = APIRouter(prefix="/api/home", tags=["home"])
@@ -30,6 +31,7 @@ RECENT_LIMIT = 8
 QUESTIONS_LIMIT = 8
 KEEP_IN_TOUCH_LIMIT = 5
 INTERACTIONS_LIMIT = 5
+REMINDERS_LIMIT = 5
 
 _BRIEF = {"first_name": 1, "last_name": 1, "company": 1, "position": 1, "birthday": 1, "template_id": 1}
 
@@ -82,7 +84,9 @@ async def home(
     open_questions = await questions_repo.list_questions(db, status="open")
     local_today = today or date.today()
     overdue = (await keep_in_touch_repo.load_buckets(db, local_today)).overdue[:KEEP_IN_TOUCH_LIMIT]
+    reminders = await reminders_repo.list_reminders(db, status="open", limit=REMINDERS_LIMIT)
     return {
+        "reminders": [r.model_dump(mode="json") for r in reminders],
         "keep_in_touch_overdue": [item.model_dump(mode="json") for item in overdue],
         "recent_interactions": await _recent_interactions(db),
         "counts": {

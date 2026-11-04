@@ -35,6 +35,7 @@ from .routers import keep_in_touch as keep_in_touch_router
 from .routers import network as network_router
 from .routers import tags as tags_router
 from .routers import questions as questions_router
+from .routers import reminders as reminders_router
 from .routers import templates as templates_router
 from .routers import import_ as import_router
 from .routers import sync as sync_router
@@ -128,6 +129,7 @@ app.include_router(attachments_router.router)
 app.include_router(templates_router.router)
 app.include_router(questions_router.router)
 app.include_router(home_router.router)
+app.include_router(reminders_router.router)
 
 # Данные для экранов в стиле Dex (Sprint 11): группы, теги, лента взаимодействий, keep in touch, граф
 app.include_router(groups_router.router)
