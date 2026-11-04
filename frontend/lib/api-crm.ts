@@ -185,12 +185,24 @@ export interface KeepInTouchItem {
   snoozed_until: string | null;
 }
 
+/** Контакт без частоты (приходит при include_unset=true). */
+export interface KeepInTouchUnsetItem {
+  contact_id: string;
+  name: string;
+  company: string;
+  tags: string[];
+  importance: number | null;
+  last_interaction_at: string | null;
+}
+
 export interface KeepInTouchBuckets {
   overdue: KeepInTouchItem[];
   /** срок сегодня или в ближайшие 7 дней */
   due_soon: KeepInTouchItem[];
   upcoming: KeepInTouchItem[];
   snoozed: KeepInTouchItem[];
+  /** только при include_unset=true: контакты без частоты (для колонки «Без частоты») */
+  unset?: KeepInTouchUnsetItem[];
 }
 
 function localToday(): string {
@@ -201,6 +213,11 @@ function localToday(): string {
 /** Ключ SWR Keep in touch — с локальной датой пользователя (сервер может жить в UTC). */
 export function keepInTouchKey(): string {
   return `/api/keep-in-touch?today=${localToday()}`;
+}
+
+/** Ключ SWR доски Keep in touch: то же + контакты без частоты (include_unset). */
+export function keepInTouchBoardKey(): string {
+  return `${keepInTouchKey()}&include_unset=true`;
 }
 
 /** Отложить напоминание на N дней (1..365). Возвращает обновлённый контакт. */
