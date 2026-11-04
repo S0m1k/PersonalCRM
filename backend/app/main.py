@@ -28,6 +28,7 @@ from .routers import assistant_chats as assistant_chats_router
 from .routers import auth as auth_router
 from .routers import calendar as calendar_router
 from .routers import contacts as contacts_router
+from .routers import goals as goals_router
 from .routers import groups as groups_router
 from .routers import home as home_router
 from .routers import interactions as interactions_router
@@ -136,6 +137,7 @@ app.include_router(groups_router.router)
 app.include_router(tags_router.router)
 app.include_router(interactions_router.router)
 app.include_router(keep_in_touch_router.router)
+app.include_router(goals_router.router)
 app.include_router(network_router.router)
 
 # Календарь: /api/calendar/* — события, привязанные к людям (Sprint 7)
