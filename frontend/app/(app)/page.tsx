@@ -1,153 +1,158 @@
 'use client';
 
 import Link from 'next/link';
-import useSWR from 'swr';
-import { ArrowUpRight, Cake, CircleHelp, Plus, Search, UserPlus } from 'lucide-react';
-import { homeKey, type HomeSummary, type UpcomingBirthday } from '@/lib/api';
-import { formatDate, plural } from '@/lib/utils';
-import { Avatar } from '@/components/app/avatar';
-import { TodayEvents } from '@/components/calendar/event-blocks';
+import useSWR, { useSWRConfig } from 'swr';
+import { toast } from 'sonner';
+import { Cake, Plus } from 'lucide-react';
+import { homeKey, meKey, type HomeSummary, type Me, type UpcomingBirthday } from '@/lib/api';
+import { markTouched, snoozeContact, type HomeInteraction, type KeepInTouchItem } from '@/lib/api-crm';
+import { completeReminder, type Reminder } from '@/lib/api-reminders';
+import { errorText, formatDate, plural, relativeTime } from '@/lib/utils';
 import { useAppActions } from '@/components/app/app-shell';
-import { EmptyState, Page, SectionTitle, Skeleton } from '@/components/app/page';
+import { Skeleton } from '@/components/app/page';
+import { TodayEvents } from '@/components/calendar/event-blocks';
+import { AiPrompt } from '@/components/home/ai-prompt';
+import { HomeSidePanel } from '@/components/home/onboarding-card';
+import { HomeSection } from '@/components/home/section';
+import { ReminderRow } from '@/components/reminders/reminder-row';
+import { Avatar } from '@/components/app/avatar';
 import { Button } from '@/components/ui/button';
-import { Kbd, Tag } from '@/components/ui/tag';
 
-const TODAY_FMT = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+const SNOOZE_DAYS = 7;
+const NIGHT_END = 5;
+const MORNING_END = 12;
+const DAY_END = 18;
 
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 5) return 'Доброй ночи';
-  if (hour < 12) return 'Доброе утро';
-  if (hour < 18) return 'Добрый день';
+function greeting(hour: number = new Date().getHours()): string {
+  if (hour < NIGHT_END) return 'Доброй ночи';
+  if (hour < MORNING_END) return 'Доброе утро';
+  if (hour < DAY_END) return 'Добрый день';
   return 'Добрый вечер';
 }
 
+function displayName(me: Me | undefined): string {
+  if (!me) return '';
+  return me.name?.trim().split(/\s+/)[0] || me.email.split('@')[0];
+}
+
 export default function HomePage() {
-  const { openSearch, newContact } = useAppActions();
-  const { data, isLoading } = useSWR<HomeSummary>(homeKey());
+  const { newContact } = useAppActions();
+  const { mutate: mutateGlobal } = useSWRConfig();
+  const { data: me } = useSWR<Me>(meKey);
+  const { data: home, isLoading, mutate } = useSWR<HomeSummary>(homeKey());
+
+  async function run(action: () => Promise<unknown>) {
+    try {
+      await action();
+      await Promise.all([mutate(), mutateGlobal((key) => typeof key === 'string' && key.startsWith('/api/keep-in-touch'))]);
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  }
+
+  const name = displayName(me);
 
   return (
-    <Page>
-      <header className="mb-8 animate-fade-up">
-        <p className="text-sm text-muted first-letter:uppercase">{TODAY_FMT.format(new Date())}</p>
-        <h1 className="mt-1 text-title">{greeting()}</h1>
-      </header>
+    <div className="mx-auto flex w-full max-w-[1200px] gap-10 px-4 pb-24 pt-8 sm:px-12 sm:pt-14 lg:px-16">
+      <div className="min-w-0 max-w-[720px] flex-1">
+        <header className="mb-6 flex animate-fade-up items-start justify-between gap-3">
+          <h1 className="font-display text-[32px] font-semibold leading-tight tracking-[-0.01em]">
+            {greeting()}
+            {name && `, ${name}`}
+          </h1>
+          <Button variant="outline" size="sm" onClick={() => newContact()}>
+            <Plus /> Новый контакт
+          </Button>
+        </header>
 
-      <button
-        type="button"
-        onClick={openSearch}
-        className="group mb-10 flex h-12 w-full items-center gap-3 rounded-lg border border-line bg-surface px-4 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-all hover:border-faint/60 hover:shadow-pop"
-      >
-        <Search className="size-5 text-faint" />
-        <span className="flex-1 text-[15px] text-faint">Найти человека, компанию, телефон…</span>
-        <Kbd>Ctrl K</Kbd>
-      </button>
+        <div className="mb-10">
+          <AiPrompt />
+        </div>
 
-      <div className="grid gap-x-10 gap-y-10 md:grid-cols-[1.4fr_1fr]">
-        <section>
-          <SectionTitle
-            aside={
-              <Link href="/questions" className="flex items-center gap-0.5 text-xs text-muted hover:text-fg">
-                Все вопросы <ArrowUpRight className="size-3.5" />
-              </Link>
-            }
-          >
-            Хотел спросить
-          </SectionTitle>
-          {isLoading ? (
-            <ListSkeleton />
-          ) : data?.open_questions.length ? (
-            <ul className="flex flex-col">
-              {data.open_questions.map((q) => (
-                <li key={q.id}>
-                  <Link
-                    href={`/contacts/${q.contact_id}?tab=questions`}
-                    className="-mx-2 flex items-start gap-3 rounded px-2 py-2 transition-colors hover:bg-hover"
-                  >
-                    <span className="mt-[3px] size-3.5 shrink-0 rounded-[3px] border-[1.5px] border-faint" aria-hidden />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm">{q.text}</span>
-                      <span className="text-xs text-muted">{q.contact_name}</span>
-                    </span>
-                    {q.ask_at === 'next_meeting' && <Tag color="blue">на встрече</Tag>}
-                    {q.ask_at && q.ask_at !== 'next_meeting' && <Tag color="yellow">{formatDate(q.ask_at, false)}</Tag>}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState icon={CircleHelp} title="Открытых вопросов нет">
-              В карточке человека во вкладке «Вопросы» можно записать, что хотите у него узнать.
-            </EmptyState>
-          )}
-        </section>
-
-        <div className="flex flex-col gap-10">
-          <section>
-            <SectionTitle
-              aside={
-                <Link href="/calendar" className="flex items-center gap-0.5 text-xs text-muted hover:text-fg">
-                  Календарь <ArrowUpRight className="size-3.5" />
-                </Link>
-              }
-            >
-              Сегодня
-            </SectionTitle>
+        <div className="flex flex-col gap-8">
+          <HomeSection title="Календарь" href="/calendar" linkLabel="Все →">
             <TodayEvents />
-          </section>
+          </HomeSection>
 
-          <section>
-            <SectionTitle>Дни рождения</SectionTitle>
+          <HomeSection title="Дни рождения" href="/contacts/birthdays" linkLabel="Все дни рождения →">
             {isLoading ? (
               <ListSkeleton rows={2} />
-            ) : data?.birthdays.length ? (
-              <ul className="flex flex-col">
-                {data.birthdays.map((b) => (
+            ) : home?.birthdays.length ? (
+              <ul>
+                {home.birthdays.map((b) => (
                   <BirthdayRow key={b.contact_id} birthday={b} />
                 ))}
               </ul>
             ) : (
-              <p className="py-2 text-sm text-faint">В ближайшие две недели — ни у кого.</p>
+              <Empty>В ближайшие две недели дней рождения нет.</Empty>
             )}
-          </section>
-        </div>
+          </HomeSection>
 
-        <section className="md:col-span-2">
-          <SectionTitle
-            aside={
-              <Button variant="ghost" size="sm" onClick={() => newContact()}>
-                <Plus /> Новый
-              </Button>
-            }
-          >
-            Недавние
-          </SectionTitle>
-          {isLoading ? (
-            <ListSkeleton rows={2} />
-          ) : data?.recent.length ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {data.recent.map((c) => (
-                <Link
-                  key={c.id}
-                  href={`/contacts/${c.id}`}
-                  className="group flex flex-col gap-3 rounded-md border border-line p-3 transition-all hover:-translate-y-px hover:bg-hover/40 hover:shadow-pop"
-                >
-                  <Avatar name={c.name || '?'} size="lg" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{c.name || 'Без имени'}</span>
-                    <span className="block truncate text-xs text-muted">{c.company || c.position || '—'}</span>
-                  </span>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <EmptyState icon={UserPlus} title="Пока никого">
-              Подключите Outlook или Google в «Синхронизации», загрузите файл или создайте контакт.
-            </EmptyState>
-          )}
-        </section>
+          <HomeSection title="Keep in touch" href="/keep-in-touch" linkLabel="Все →">
+            {isLoading ? (
+              <ListSkeleton />
+            ) : home?.keep_in_touch_overdue.length ? (
+              <ul>
+                {home.keep_in_touch_overdue.map((item) => (
+                  <KeepInTouchRow
+                    key={item.contact_id}
+                    item={item}
+                    onTouched={() => run(() => markTouched(item.contact_id))}
+                    onSnooze={() => run(() => snoozeContact(item.contact_id, SNOOZE_DAYS))}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <Empty>Всем, с кем вы хотели поддерживать связь, уже написано.</Empty>
+            )}
+          </HomeSection>
+
+          <HomeSection title="Напоминания" href="/reminders" linkLabel="Все →">
+            {isLoading ? (
+              <ListSkeleton />
+            ) : home?.reminders.length ? (
+              <ul>
+                {home.reminders.map((r: Reminder) => (
+                  <ReminderRow key={r.id} reminder={r} onToggle={(x) => run(() => completeReminder(x.id))} />
+                ))}
+              </ul>
+            ) : (
+              <Empty>Напоминаний нет.</Empty>
+            )}
+          </HomeSection>
+
+          <HomeSection title="Последние взаимодействия" href="/timeline" linkLabel="Все →">
+            {isLoading ? (
+              <ListSkeleton />
+            ) : home?.recent_interactions.length ? (
+              <ul>
+                {home.recent_interactions.map((i) => (
+                  <InteractionRow key={i.id} interaction={i} />
+                ))}
+              </ul>
+            ) : (
+              <Empty>Пока ни одного взаимодействия.</Empty>
+            )}
+          </HomeSection>
+        </div>
       </div>
-    </Page>
+
+      <HomeSidePanel home={home} />
+    </div>
+  );
+}
+
+function Empty({ children }: { children: string }) {
+  return <p className="py-1 text-sm text-faint">{children}</p>;
+}
+
+function ListSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="flex flex-col gap-2 py-1">
+      {Array.from({ length: rows }, (_, i) => (
+        <Skeleton key={i} className="h-8" />
+      ))}
+    </div>
   );
 }
 
@@ -160,8 +165,8 @@ function BirthdayRow({ birthday }: { birthday: UpcomingBirthday }) {
         : `через ${birthday.days_until} ${plural(birthday.days_until, 'день', 'дня', 'дней')}`;
   return (
     <li>
-      <Link href={`/contacts/${birthday.contact_id}`} className="-mx-2 flex items-center gap-3 rounded px-2 py-1.5 hover:bg-hover">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-tag-pink text-fg/70" aria-hidden>
+      <Link href={`/contacts/${birthday.contact_id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-hover">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-crm-birthday/20 text-crm-birthday" aria-hidden>
           <Cake className="size-3.5" />
         </span>
         <span className="min-w-0 flex-1">
@@ -171,18 +176,67 @@ function BirthdayRow({ birthday }: { birthday: UpcomingBirthday }) {
             {birthday.turns ? ` · исполнится ${birthday.turns}` : ''}
           </span>
         </span>
-        {birthday.days_until <= 1 ? <Tag color="pink">{when}</Tag> : <span className="shrink-0 text-xs text-faint">{when}</span>}
+        <span className="shrink-0 text-xs text-muted">{when}</span>
       </Link>
     </li>
   );
 }
 
-function ListSkeleton({ rows = 3 }: { rows?: number }) {
+function KeepInTouchRow({ item, onTouched, onSnooze }: { item: KeepInTouchItem; onTouched: () => void; onSnooze: () => void }) {
   return (
-    <div className="flex flex-col gap-2 py-1">
-      {Array.from({ length: rows }, (_, i) => (
-        <Skeleton key={i} className="h-8" />
-      ))}
-    </div>
+    <li className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-hover/60">
+      <Link href={`/contacts/${item.contact_id}`} className="flex min-w-0 flex-1 items-center gap-3">
+        <Avatar name={item.name || '?'} />
+        <span className="min-w-0">
+          <span className="block truncate text-sm">{item.name || 'Без имени'}</span>
+          <span className="block text-xs text-danger">
+            просрочено на {item.days_overdue} {plural(item.days_overdue, 'день', 'дня', 'дней')}
+          </span>
+        </span>
+      </Link>
+      <Button variant="outline" size="sm" onClick={onTouched}>
+        Связался
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onSnooze} title={`Отложить на ${SNOOZE_DAYS} дней`}>
+        Отложить
+      </Button>
+    </li>
+  );
+}
+
+const KIND_LABELS: Record<HomeInteraction['kind'], string> = {
+  note: 'Заметка',
+  call: 'Звонок',
+  meeting: 'Встреча',
+  message: 'Сообщение',
+  email: 'Письмо',
+  other: 'Другое',
+};
+
+function InteractionRow({ interaction }: { interaction: HomeInteraction }) {
+  const people = interaction.contacts.map((c) => c.name).join(', ');
+  const first = interaction.contacts[0];
+  const content = (
+    <>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm">{interaction.title || KIND_LABELS[interaction.kind]}</span>
+        <span className="block truncate text-xs text-muted">
+          {KIND_LABELS[interaction.kind]}
+          {people && ` · ${people}`}
+        </span>
+      </span>
+      <span className="shrink-0 text-xs text-faint">{relativeTime(interaction.occurred_at)}</span>
+    </>
+  );
+  return (
+    <li>
+      {first ? (
+        <Link href={`/contacts/${first.id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-hover">
+          {content}
+        </Link>
+      ) : (
+        <div className="-mx-2 flex items-center gap-3 px-2 py-1.5">{content}</div>
+      )}
+    </li>
   );
 }

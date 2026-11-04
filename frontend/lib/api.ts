@@ -6,6 +6,7 @@
  */
 
 import type { HomeInteraction, KeepInTouchItem } from './api-crm';
+import type { Reminder } from './api-reminders';
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -221,6 +222,8 @@ export interface HomeSummary {
   /** Sprint 11: последние 5 взаимодействий с именами людей */
   recent_interactions: HomeInteraction[];
   counts: { groups: number; tags: number };
+  /** 5 ближайших невыполненных напоминаний */
+  reminders: Reminder[];
 }
 
 export interface TokenResponse {
