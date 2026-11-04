@@ -88,6 +88,44 @@ async def create_contact(
     return await repo.create_contact(db, data.model_copy(update={"fields": fields}))
 
 
+def contact_filters(
+    q: Optional[str] = Query(default=None, description="Поиск по имени/компании/email/телефону"),
+    category: Optional[str] = Query(default=None, description="Фильтр по категории"),
+    priority: Optional[str] = Query(default=None, description="Фильтр по приоритету"),
+    template_id: Optional[str] = Query(default=None, description="Фильтр по шаблону карточки"),
+    tag: Optional[str] = Query(default=None, description="Фильтр по тегу (без учёта регистра)"),
+    group_id: Optional[str] = Query(default=None, description="Фильтр по группе"),
+    has_location: Optional[bool] = Query(default=None, description="Только с координатами / только без"),
+    has_frequency: Optional[bool] = Query(default=None, description="Частота общения задана / не задана"),
+    has_priority: Optional[bool] = Query(default=None, description="Приоритет задан / не задан"),
+    has_birthday: Optional[bool] = Query(default=None, description="Указан день рождения / нет"),
+    has_place: Optional[bool] = Query(default=None, description="Есть адрес, город или координаты / нет"),
+    source: Optional[str] = Query(default=None, description="Источник: manual, google, outlook, csv…"),
+    inactive_days: Optional[int] = Query(
+        default=None, ge=1, le=3650, description="Последнее взаимодействие давнее N дней или не было"
+    ),
+) -> dict:
+    """Общие фильтры списка и счётчика контактов (имена совпадают с repositories.contacts.build_query)."""
+    return {
+        "q": q,
+        "category": category,
+        "priority": priority,
+        "template_id": template_id,
+        "tag": tag,
+        "group_id": group_id,
+        "has_location": has_location,
+        "has_frequency": has_frequency,
+        "has_priority": has_priority,
+        "has_birthday": has_birthday,
+        "has_place": has_place,
+        "source": source,
+        "inactive_days": inactive_days,
+    }
+
+
+FiltersDep = Annotated[dict, Depends(contact_filters)]
+
+
 @router.get(
     "/",
     response_model=list[ContactOut],
@@ -96,13 +134,7 @@ async def create_contact(
 async def list_contacts(
     db: DbDep,
     _user: AuthDep,
-    q: Optional[str] = Query(default=None, description="Поиск по имени/компании/email/телефону"),
-    category: Optional[str] = Query(default=None, description="Фильтр по категории"),
-    priority: Optional[str] = Query(default=None, description="Фильтр по приоритету"),
-    template_id: Optional[str] = Query(default=None, description="Фильтр по шаблону карточки"),
-    tag: Optional[str] = Query(default=None, description="Фильтр по тегу (без учёта регистра)"),
-    group_id: Optional[str] = Query(default=None, description="Фильтр по группе"),
-    has_location: Optional[bool] = Query(default=None, description="Только с координатами / только без"),
+    filters: FiltersDep,
     sort: Optional[Literal["last_interaction", "name", "created", "importance"]] = Query(
         default=None, description="Сортировка (по умолчанию — недавно изменённые)"
     ),
@@ -110,19 +142,13 @@ async def list_contacts(
     limit: int = Query(default=50, ge=1, le=200, description="Макс. записей в ответе"),
 ) -> list[ContactOut]:
     """Вернуть список контактов с опциональным поиском и фильтрацией."""
-    return await repo.list_contacts(
-        db,
-        q=q,
-        category=category,
-        priority=priority,
-        template_id=template_id,
-        tag=tag,
-        group_id=group_id,
-        has_location=has_location,
-        sort=sort,
-        skip=skip,
-        limit=limit,
-    )
+    return await repo.list_contacts(db, sort=sort, skip=skip, limit=limit, **filters)
+
+
+@router.get("/count", summary="Число контактов под фильтрами списка")
+async def count_contacts(db: DbDep, _user: AuthDep, filters: FiltersDep) -> dict[str, int]:
+    """Те же фильтры, что у списка; нужен таблице для «N контактов» и бесконечной прокрутки."""
+    return {"count": await repo.count_contacts(db, **filters)}
 
 
 @router.get(

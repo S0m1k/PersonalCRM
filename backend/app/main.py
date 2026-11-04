@@ -28,8 +28,11 @@ from .routers import assistant_chats as assistant_chats_router
 from .routers import auth as auth_router
 from .routers import calendar as calendar_router
 from .routers import contacts as contacts_router
+from .routers import duplicates as duplicates_router
 from .routers import goals as goals_router
 from .routers import groups as groups_router
+from .routers import places as places_router
+from .routers import views as views_router
 from .routers import home as home_router
 from .routers import interactions as interactions_router
 from .routers import keep_in_touch as keep_in_touch_router
@@ -121,6 +124,8 @@ app.add_middleware(
 # Auth: /api/auth/* — регистрация и вход публичные, остальное требует токена
 app.include_router(auth_router.router)
 
+# Дубли и слияние (/api/contacts/duplicates, /merge) — раньше contacts: иначе /{contact_id} перехватит путь
+app.include_router(duplicates_router.router)
 # Contacts: /api/contacts/* — требуют токена
 app.include_router(contacts_router.router)
 # Вложения к контактам: /api/contacts/{id}/attachments (файлы — в S3 / MinIO)
@@ -134,6 +139,8 @@ app.include_router(reminders_router.router)
 
 # Данные для экранов в стиле Dex (Sprint 11): группы, теги, лента взаимодействий, keep in touch, граф
 app.include_router(groups_router.router)
+app.include_router(views_router.router)
+app.include_router(places_router.router)
 app.include_router(tags_router.router)
 app.include_router(interactions_router.router)
 app.include_router(keep_in_touch_router.router)

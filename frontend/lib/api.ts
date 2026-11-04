@@ -407,6 +407,12 @@ export interface ListParams {
   tag?: string;
   group_id?: string;
   has_location?: boolean;
+  has_frequency?: boolean;
+  has_priority?: boolean;
+  has_birthday?: boolean;
+  has_place?: boolean;
+  source?: string;
+  inactive_days?: number;
   sort?: ContactSort;
   skip?: number;
   limit?: number;
@@ -420,6 +426,12 @@ export async function getContacts(params: ListParams = {}): Promise<Contact[]> {
   if (params.tag) qs.set('tag', params.tag);
   if (params.group_id) qs.set('group_id', params.group_id);
   if (params.has_location !== undefined) qs.set('has_location', String(params.has_location));
+  if (params.has_frequency !== undefined) qs.set('has_frequency', String(params.has_frequency));
+  if (params.has_priority !== undefined) qs.set('has_priority', String(params.has_priority));
+  if (params.has_birthday !== undefined) qs.set('has_birthday', String(params.has_birthday));
+  if (params.has_place !== undefined) qs.set('has_place', String(params.has_place));
+  if (params.source) qs.set('source', params.source);
+  if (params.inactive_days) qs.set('inactive_days', String(params.inactive_days));
   if (params.sort) qs.set('sort', params.sort);
   if (params.skip !== undefined) qs.set('skip', String(params.skip));
   if (params.limit !== undefined) qs.set('limit', String(params.limit));
