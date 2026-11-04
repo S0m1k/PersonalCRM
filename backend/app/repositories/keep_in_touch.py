@@ -11,7 +11,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from ..services.keep_in_touch import KeepInTouchBuckets, bucketize
+from ..services.keep_in_touch import KeepInTouchBuckets, bucketize, build_unset_item
 from . import contacts as contacts_repo
 from . import interactions as interactions_repo
 
@@ -27,13 +27,27 @@ _PROJECTION = {
 }
 
 
-async def load_buckets(db: AsyncIOMotorDatabase, today: date) -> KeepInTouchBuckets:
+async def load_buckets(
+    db: AsyncIOMotorDatabase, today: date, include_unset: bool = False
+) -> KeepInTouchBuckets:
     docs = await db[contacts_repo.COLLECTION].find(
         {"keep_in_touch.frequency_days": {"$gt": 0}}, _PROJECTION
     ).to_list(length=None)
     # Свежие данные: события календаря могли появиться после последнего пересчёта
     last = await interactions_repo.latest_map(db, [str(d["_id"]) for d in docs])
-    return bucketize(docs, last, today)
+    buckets = bucketize(docs, last, today)
+    if include_unset:
+        buckets.unset = await _load_unset(db)
+    return buckets
+
+
+async def _load_unset(db: AsyncIOMotorDatabase) -> list:
+    docs = await db[contacts_repo.COLLECTION].find(
+        {"keep_in_touch.frequency_days": {"$not": {"$gt": 0}}}, _PROJECTION
+    ).to_list(length=None)
+    last = await interactions_repo.latest_map(db, [str(d["_id"]) for d in docs])
+    items = [build_unset_item(d, last.get(str(d["_id"]))) for d in docs]
+    return sorted(items, key=lambda i: i.name.lower())
 
 
 async def set_snooze(db: AsyncIOMotorDatabase, contact_id: str, until: Optional[date]) -> bool:

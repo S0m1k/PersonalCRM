@@ -35,11 +35,24 @@ class KeepInTouchItem(BaseModel):
     snoozed_until: Optional[date] = None
 
 
+class KeepInTouchUnsetItem(BaseModel):
+    """Контакт без частоты (колонка «Без частоты» на доске)."""
+
+    contact_id: str
+    name: str
+    company: str = ""
+    tags: list[str] = Field(default_factory=list)
+    importance: Optional[int] = None
+    last_interaction_at: Optional[datetime] = None
+
+
 class KeepInTouchBuckets(BaseModel):
     overdue: list[KeepInTouchItem] = Field(default_factory=list)
     due_soon: list[KeepInTouchItem] = Field(default_factory=list)
     upcoming: list[KeepInTouchItem] = Field(default_factory=list)
     snoozed: list[KeepInTouchItem] = Field(default_factory=list)
+    # Только при include_unset=true; иначе поля нет в ответе
+    unset: Optional[list[KeepInTouchUnsetItem]] = None
 
 
 def _aware(value: datetime) -> datetime:
@@ -105,3 +118,15 @@ def bucketize(
     for bucket in (buckets.due_soon, buckets.upcoming, buckets.snoozed):
         bucket.sort(key=lambda i: (i.due_date, i.name))
     return buckets
+
+
+def build_unset_item(doc: dict, last: Optional[datetime]) -> KeepInTouchUnsetItem:
+    last = last or doc.get("last_interaction_at")
+    return KeepInTouchUnsetItem(
+        contact_id=str(doc["_id"]),
+        name=_name(doc),
+        company=doc.get("company", ""),
+        tags=list(doc.get("tags") or []),
+        importance=doc.get("importance"),
+        last_interaction_at=_aware(last) if last else None,
+    )

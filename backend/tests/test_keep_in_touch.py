@@ -149,6 +149,27 @@ class TestApi:
         assert item["due_date"] == (today + timedelta(days=30)).isoformat()
         assert item["frequency_days"] == 30
 
+    def test_include_unset_lists_contacts_without_frequency(self, crm_client, crm_auth):
+        make_contact(crm_client, crm_auth, "С частотой", keep_in_touch={"frequency_days": 7})
+        free = make_contact(crm_client, crm_auth, "Без частоты", company="Акме")
+        recent = make_contact(crm_client, crm_auth, "Недавний")
+        crm_client.post("/api/interactions", json={"contact_ids": [recent["id"]]}, headers=crm_auth)
+
+        resp = crm_client.get("/api/keep-in-touch", params={"include_unset": "true"}, headers=crm_auth)
+
+        assert resp.status_code == 200
+        unset = resp.json()["unset"]
+        assert {i["name"] for i in unset} == {"Без частоты", "Недавний"}
+        by_id = {i["contact_id"]: i for i in unset}
+        assert by_id[free["id"]]["company"] == "Акме"
+        assert by_id[free["id"]]["last_interaction_at"] is None
+        assert by_id[recent["id"]]["last_interaction_at"] is not None
+
+    def test_unset_is_absent_by_default(self, crm_client, crm_auth):
+        make_contact(crm_client, crm_auth, "Без частоты")
+
+        assert "unset" not in crm_client.get("/api/keep-in-touch", headers=crm_auth).json()
+
     def test_snooze_moves_contact_to_snoozed(self, crm_client, crm_auth):
         c = make_contact(crm_client, crm_auth, keep_in_touch={"frequency_days": 1})
         far = (date.today() + timedelta(days=30)).isoformat()
