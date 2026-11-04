@@ -100,7 +100,7 @@ export default function GoalsPage() {
         />
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
         <div className="space-y-6">
           <section>
             <SectionTitle

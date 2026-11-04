@@ -2,16 +2,18 @@
 
 import { PRIORITY_LEVELS, isPriorityLevel, type PriorityLevel } from './priority';
 
-export const MAP_WIDTH = 1100;
-export const MAP_HEIGHT = 660;
-export const CENTER = { x: MAP_WIDTH / 2, y: 70 };
-export const FIRST_RADIUS = 140;
-export const RING_STEP = 96;
-export const BAND_WIDTH = 82;
+// Дуги вписаны в холст с запасом: внешний радиус вместе с полосой (≈ 430) меньше половины ширины.
+// Раньше холст 1100×660 был почти целиком занят дугами, и в широкой рамке они выглядели растянутыми.
+export const MAP_WIDTH = 920;
+export const MAP_HEIGHT = 540;
+export const CENTER = { x: MAP_WIDTH / 2, y: 56 };
+export const FIRST_RADIUS = 108;
+export const RING_STEP = 72;
+export const BAND_WIDTH = 60;
 export const AVATAR_RADIUS = 16;
 const AVATAR_GAP = 6;
-/** Края дуги, где аватары не ставим (рад.), чтобы не залезать на подпись уровня */
-const EDGE_PAD = 0.1;
+/** Края дуги, где аватары не ставим (рад.): там подпись уровня, а у внутренних дуг — ещё и соседний ряд подписей */
+const EDGE_PAD = 0.34;
 const MIN_DRAG_RADIUS = 60;
 
 export function tierRadius(index: number): number {

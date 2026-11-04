@@ -54,6 +54,8 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 const PAN_SLOP = 3;
 const PILL_HEIGHT = 24;
+/** Подписи соседних дуг шире шага между дугами, поэтому чередуем два ряда: вверх и вниз от оси дуг */
+const PILL_ROW_OFFSET = 13;
 
 export const PriorityArcs = forwardRef<PriorityArcsHandle, Props>(function PriorityArcs(
   { tiers, labels, highlightId, draggingId, dropTier, onAvatarPointerDown, onAvatarActivate, onOverflow },
@@ -149,7 +151,7 @@ export const PriorityArcs = forwardRef<PriorityArcsHandle, Props>(function Prior
           const pillWidth = 22 + text.length * 7.2;
           return (
             <g key={tier}>
-              <g transform={`translate(${CENTER.x - radius - pillWidth / 2 + 6} ${CENTER.y + 4 - PILL_HEIGHT / 2})`} aria-hidden>
+              <g transform={`translate(${CENTER.x - radius - pillWidth / 2 + 6} ${CENTER.y + 4 - PILL_HEIGHT / 2 + (index % 2 === 0 ? -PILL_ROW_OFFSET : PILL_ROW_OFFSET)})`} aria-hidden>
                 <rect width={pillWidth} height={PILL_HEIGHT} rx={PILL_HEIGHT / 2} className="fill-surface stroke-line" />
                 <text x={pillWidth / 2} y={PILL_HEIGHT / 2 + 4.5} textAnchor="middle" className="fill-fg text-[12px] font-medium">
                   {text}

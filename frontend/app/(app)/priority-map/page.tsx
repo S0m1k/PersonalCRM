@@ -163,13 +163,14 @@ export default function PriorityMapPage() {
   const overflowPeople = overflowTier ? tiers[overflowTier] : [];
 
   return (
-    <Page wide>
+    <Page wide className="max-w-[1680px] sm:px-6 lg:px-8">
       <PageHeader icon={Grid2x2} title="Priority Map" description="Расставьте людей по кругам близости: чем ближе к центру, тем важнее." />
       {isLoading || !contacts ? (
         <Skeleton className="h-[560px] rounded-2xl" />
       ) : (
         <div className="flex flex-col gap-3">
-          <div ref={frameRef} className="relative h-[calc(100vh-360px)] min-h-[520px] overflow-hidden rounded-2xl border border-line bg-surface">
+          <div className="flex flex-col gap-3 xl:flex-row">
+          <div ref={frameRef} className="relative aspect-[920/540] min-w-0 overflow-hidden rounded-2xl border border-line bg-surface xl:aspect-auto xl:h-[calc(100vh-360px)] xl:min-h-[520px] xl:flex-1">
             <PriorityArcs
               ref={arcsRef}
               tiers={tiers}
@@ -181,13 +182,14 @@ export default function PriorityMapPage() {
               onAvatarActivate={setActiveId}
               onOverflow={setOverflowTier}
             />
-            <div className="absolute left-3 top-3">
+            <div className="absolute bottom-3 left-3">
               <Button size="sm" onClick={() => arcsRef.current?.reset()}>
                 <RotateCcw aria-hidden />
                 Сбросить вид
               </Button>
             </div>
-            <aside className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-72 max-w-[calc(100%-1.5rem)] flex-col gap-3 overflow-auto rounded-2xl border border-line bg-surface/95 p-4 shadow-lg backdrop-blur">
+          </div>
+            <aside className="flex w-full flex-col gap-3 overflow-auto rounded-2xl border border-line bg-surface p-4 shadow-xs xl:h-[calc(100vh-360px)] xl:min-h-[520px] xl:w-72 xl:flex-none">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <h2 className="font-display text-xl font-semibold leading-tight">{percent}% с приоритетом</h2>

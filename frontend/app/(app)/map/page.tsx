@@ -116,7 +116,7 @@ function PlaceSearch({ onPick }: { onPick: (place: GeoPlace) => void }) {
   );
 }
 
-const selectClass = 'h-8 min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-2 text-[13px] text-fg';
+const selectClass = 'h-8 min-w-0 flex-1 basis-[6.5rem] rounded-lg border border-line-strong bg-surface px-2 text-[13px] text-fg';
 
 const MAP_3D_KEY = 'crm_map_3d';
 
@@ -204,7 +204,7 @@ export default function MapPage() {
   const missingCount = missing?.missing ?? 0;
 
   return (
-    <Page wide>
+    <Page wide className="max-w-[1680px] sm:px-6 lg:px-8">
       <PageHeader
         icon={MapPin}
         title="Карта"
@@ -218,7 +218,7 @@ export default function MapPage() {
         }
       />
       <div className="flex min-h-[560px] flex-col gap-4 lg:h-[calc(100vh-260px)] lg:flex-row">
-        <div className="relative h-[420px] overflow-hidden rounded-2xl border border-line shadow-xs lg:h-auto lg:flex-[7]">
+        <div className="relative h-[420px] min-w-0 overflow-hidden rounded-2xl border border-line shadow-xs lg:h-auto lg:flex-1">
           {is3d !== null && (
             <ContactMap
               ref={mapRef}
@@ -251,10 +251,10 @@ export default function MapPage() {
           </div>
         </div>
 
-        <aside className="flex min-h-0 flex-col gap-3 lg:flex-[3]">
+        <aside className="flex min-h-0 min-w-0 flex-col gap-3 lg:w-72 lg:flex-none xl:w-80">
           <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader label={`${visible.length} ${plural(visible.length, 'контакт', 'контакта', 'контактов')} в области`} />
-            <div className="mb-2 flex gap-2">
+            <div className="mb-2 flex flex-wrap gap-2">
               <select aria-label="Сортировка" className={selectClass} value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
                 <option value="name">По имени</option>
                 <option value="last_interaction">По общению</option>
