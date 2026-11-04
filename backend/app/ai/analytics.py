@@ -399,6 +399,27 @@ async def stale_contacts(db: AsyncIOMotorDatabase, params: dict) -> ToolOutput:
     return ToolOutput(facts, [table, chips])
 
 
+async def goal_progress(db: AsyncIOMotorDatabase, params: dict) -> ToolOutput:
+    """Выполнение целей активной стратегии (основной подход): процент выполнения по каждой цели."""
+    from ..repositories import goals as goals_repo
+    from ..services import strategy
+
+    state = await goals_repo.get_state(db)
+    if not state["primary"]:
+        return ToolOutput({"note": "Стратегия не выбрана: подход задаётся на странице «Цели»"})
+    metrics = strategy.compute_all_metrics(state, await goals_repo.metrics_context(db, state, params["period"]))
+    primary = metrics["approaches"][0]
+    series = strategy.goal_progress_series(metrics)
+    facts = {"approach": primary["name"], "period_days": params["period"], "targets": primary["targets"],
+             "hints": primary["hints"]}
+    if not series["points"]:
+        facts["note"] = "У выбранного подхода пока нет числовых целей"
+        return ToolOutput(facts)
+    block = {"type": "chart", "chart": "bar", "title": f"Цели: {primary['name']}", "x_label": "Цель",
+             "y_label": "Выполнено, %", "series": [{"name": "Выполнение цели", "points": series["points"]}]}
+    return ToolOutput(facts, [block])
+
+
 # ---------------------------------------------------------------------------
 # Реестр
 # ---------------------------------------------------------------------------
@@ -459,6 +480,15 @@ ANALYTICS_TOOLS: dict[str, AnalyticsTool] = {
                 "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
             }, "required": [], "additionalProperties": False},
             stale_contacts,
+        ),
+        AnalyticsTool(
+            "goal_progress",
+            "Как выполняются цели выбранной стратегии общения (подход на странице «Цели»): % выполнения по целям. "
+            "Для вопросов «как мои цели», «выполняю ли я стратегию».",
+            {"type": "object", "properties": {
+                "period": {"type": "integer", "minimum": 30, "maximum": 180, "default": 30},
+            }, "required": [], "additionalProperties": False},
+            goal_progress,
         ),
     )
 }

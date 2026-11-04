@@ -38,7 +38,7 @@ def test_registry_describes_every_tool_with_json_schema():
 
     assert {s["name"] for s in specs} == {
         "count_contacts_by", "interactions_over_time", "birthdays_by_month",
-        "contacts_added_over_time", "top_contacts_by_interactions", "stale_contacts",
+        "contacts_added_over_time", "top_contacts_by_interactions", "stale_contacts", "goal_progress",
     }
     for spec in specs:
         assert spec["description"]
@@ -287,3 +287,25 @@ def test_dt_parsing():
     assert analytics._dt("2026-01-02") == datetime(2026, 1, 2, tzinfo=timezone.utc)
     assert analytics._dt(date(2026, 1, 2)) == datetime(2026, 1, 2, tzinfo=timezone.utc)
     assert analytics._dt("не дата") is None and analytics._dt(None) is None
+
+
+async def test_goal_progress_without_strategy_has_note(db):
+    out = await run_tool(db, "goal_progress", {})
+
+    assert "note" in out.facts and out.blocks == []
+
+
+async def test_goal_progress_returns_chart_for_primary_approach(db):
+    await db["goals"].insert_one({"_id": "goals", "primary": "max_contacts", "enabled": []})
+    await _add(db, first_name="Анна")
+
+    out = await run_tool(db, "goal_progress", {"period": 90})
+
+    assert out.facts["approach"] == "Максимум контактов" and out.facts["period_days"] == 90
+    points = out.blocks[0]["series"][0]["points"]
+    assert [p["x"] for p in points] == ["Новых знакомств в этом месяце", "Сеть тронута за 180 дн."]
+
+
+async def test_goal_progress_rejects_bad_period(db):
+    with pytest.raises(ToolError):
+        await run_tool(db, "goal_progress", {"period": 5})
