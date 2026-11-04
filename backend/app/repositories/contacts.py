@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from bson import ObjectId
@@ -102,8 +102,7 @@ async def get_contacts_by_ids(db: AsyncIOMotorDatabase, contact_ids: list[str]) 
     return [ContactOut.from_mongo(d) for d in docs]
 
 
-async def list_contacts(
-    db: AsyncIOMotorDatabase,
+def build_query(
     q: Optional[str] = None,
     category: Optional[str] = None,
     priority: Optional[str] = None,
@@ -111,28 +110,23 @@ async def list_contacts(
     tag: Optional[str] = None,
     group_id: Optional[str] = None,
     has_location: Optional[bool] = None,
-    sort: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 50,
-) -> list[ContactOut]:
-    """
-    Список контактов с поиском и фильтрацией.
-
-    - q: поиск по имени, фамилии, компании, email, телефону (регексп, без учёта регистра;
-      номер сравнивается по ключу из services/phones.py, формат записи не важен)
-    - category / priority: точная фильтрация по полю
-    - tag (без учёта регистра) / group_id / has_location: фильтры Sprint 11
-    - sort: last_interaction | name | created | importance (по умолчанию — по updated_at)
-    - skip / limit: пагинация
-    """
-    query: dict = {}
+    has_frequency: Optional[bool] = None,
+    has_priority: Optional[bool] = None,
+    has_birthday: Optional[bool] = None,
+    has_place: Optional[bool] = None,
+    source: Optional[str] = None,
+    inactive_days: Optional[int] = None,
+    now: Optional[datetime] = None,
+) -> dict:
+    """Фильтр Mongo для списка контактов; условия соединяются через $and."""
+    clauses: list[dict] = []
 
     if q:
         # Поиск по нескольким полям через $or + $regex.
         # re.escape — чтобы спецсимволы (например "+" в телефоне) трактовались
         # буквально, а не как regex; заодно закрывает regex-инъекцию.
         pattern = {"$regex": re.escape(q), "$options": "i"}
-        query["$or"] = [
+        any_of: list[dict] = [
             {"first_name": pattern},
             {"last_name": pattern},
             {"company": pattern},
@@ -142,37 +136,90 @@ async def list_contacts(
         # Номер в любой записи: 89215535333 найдёт и «+7 921 553-53-33»
         phone_pattern = phones.search_pattern(q)
         if phone_pattern:
-            query["$or"].append({"phones.normalized": {"$regex": phone_pattern}})
+            any_of.append({"phones.normalized": {"$regex": phone_pattern}})
+        clauses.append({"$or": any_of})
 
     if category:
-        query["category"] = category
-
+        clauses.append({"category": category})
     if priority:
-        query["priority"] = priority
-
+        clauses.append({"priority": priority})
     if template_id:
-        query["template_id"] = template_id
-
+        clauses.append({"template_id": template_id})
     if tag:
-        query["tags"] = {"$regex": f"^{re.escape(tag.strip())}$", "$options": "i"}
-
+        clauses.append({"tags": {"$regex": f"^{re.escape(tag.strip())}$", "$options": "i"}})
     if group_id:
-        query["group_ids"] = group_id
+        clauses.append({"group_ids": group_id})
+    if source:
+        clauses.append({"$or": [{"source": source}, {"sources": source}]})
 
     if has_location is True:
-        query["location"] = {"$ne": None}
+        clauses.append({"location": {"$ne": None}})
     elif has_location is False:
-        query["location"] = None
+        clauses.append({"location": None})
 
+    if has_frequency is True:
+        clauses.append({"keep_in_touch.frequency_days": {"$ne": None}})
+    elif has_frequency is False:
+        clauses.append({"keep_in_touch.frequency_days": None})
+
+    # Приоритет не задан — пустая строка или поля нет; «none» («Нет») — выбранное значение
+    if has_priority is True:
+        clauses.append({"priority": {"$nin": ["", None]}})
+    elif has_priority is False:
+        clauses.append({"priority": {"$in": ["", None]}})
+
+    if has_birthday is True:
+        clauses.append({"birthday": {"$nin": ["", None]}})
+    elif has_birthday is False:
+        clauses.append({"birthday": {"$in": ["", None]}})
+
+    # «Место» — адрес, город или метка координат
+    place_fields = ({"address": {"$nin": ["", None]}}, {"city": {"$nin": ["", None]}}, {"location": {"$ne": None}})
+    if has_place is True:
+        clauses.append({"$or": list(place_fields)})
+    elif has_place is False:
+        clauses.append({"address": {"$in": ["", None]}})
+        clauses.append({"city": {"$in": ["", None]}})
+        clauses.append({"location": None})
+
+    if inactive_days is not None:
+        threshold = (now or _utcnow()) - timedelta(days=inactive_days)
+        clauses.append({"$or": [{"last_interaction_at": None}, {"last_interaction_at": {"$lt": threshold}}]})
+
+    if not clauses:
+        return {}
+    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+
+
+async def list_contacts(
+    db: AsyncIOMotorDatabase,
+    sort: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
+    **filters,
+) -> list[ContactOut]:
+    """
+    Список контактов с поиском и фильтрацией (параметры фильтров — см. build_query).
+
+    - q: поиск по имени, фамилии, компании, email, телефону (без учёта регистра;
+      номер сравнивается по ключу из services/phones.py, формат записи не важен)
+    - sort: last_interaction | name | created | importance (по умолчанию — по updated_at)
+    - skip / limit: пагинация
+    """
     cursor = (
         db[COLLECTION]
-        .find(query)
+        .find(build_query(**filters))
         .sort(SORTS.get(sort or "", [("updated_at", -1)]))
         .skip(skip)
         .limit(limit)
     )
     docs = await cursor.to_list(length=limit)
     return [ContactOut.from_mongo(doc) for doc in docs]
+
+
+async def count_contacts(db: AsyncIOMotorDatabase, **filters) -> int:
+    """Сколько контактов подходит под те же фильтры, что и в list_contacts."""
+    return await db[COLLECTION].count_documents(build_query(**filters))
 
 
 async def update_contact(
