@@ -1,125 +1,78 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import {
-  AlignLeft,
-  AtSign,
-  Briefcase,
-  Building2,
-  Cake,
-  Calendar,
-  ChevronRight,
-  CircleHelp,
-  Flag,
-  Hash,
-  Info,
-  LayoutTemplate,
-  Link2,
-  ListChecks,
-  MapPin,
-  MoreHorizontal,
-  Paperclip,
-  Phone,
-  Plus,
-  SquareCheck,
-  StickyNote,
-  Tag as TagIcon,
-  Trash2,
-  Type,
-  UserX,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
-import {
-  deleteContact,
-  updateContact,
-  type Contact,
-  type ContactUpdate,
-  type CustomField,
-  type FieldType,
-  type FieldValue,
-  type Template,
-} from '@/lib/api';
-import { errorText, formatDate, fullName, relativeTime, type TagColor } from '@/lib/utils';
-import { Avatar } from '@/components/app/avatar';
-import { TemplateIcon } from '@/components/app/icons';
-import { EmptyState, Page, SectionTitle, Skeleton } from '@/components/app/page';
-import { EditableText, FieldValueEditor, PropertyRow, SelectValue } from '@/components/contact/editable';
-import { AttachmentsPanel } from '@/components/contact/attachments-panel';
-import { MultiValue } from '@/components/contact/multi-value';
-import { QuestionsPanel } from '@/components/contact/questions-panel';
+import { CalendarDays, ChevronRight, CircleHelp, Database, History, Paperclip, Sparkles, UserX } from 'lucide-react';
+import { deleteContact, updateContact, type Contact, type Template } from '@/lib/api';
+import { errorText, fullName, relativeTime } from '@/lib/utils';
+import { EmptyState, Page, Skeleton } from '@/components/app/page';
 import { ContactEvents } from '@/components/calendar/event-blocks';
+import { AttachmentsPanel } from '@/components/contact/attachments-panel';
+import { ContactHeader } from '@/components/contact/contact-header';
+import { ContactSummary } from '@/components/contact/contact-summary';
+import { DataTab } from '@/components/contact/data-tab';
+import { DossierTab } from '@/components/contact/dossier-tab';
+import { QuestionsPanel } from '@/components/contact/questions-panel';
+import { TimelineTab } from '@/components/contact/timeline-tab';
+import type { SaveContact } from '@/components/contact/types';
+import { useDossier } from '@/components/contact/use-dossier';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuTrigger,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/overlays';
-import { Tag } from '@/components/ui/tag';
+import { Dialog, DialogContent, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/overlays';
 
-const PRIORITIES: Record<string, { label: string; color: TagColor }> = {
-  high: { label: 'Высокий', color: 'red' },
-  medium: { label: 'Средний', color: 'yellow' },
-  low: { label: 'Низкий', color: 'gray' },
-};
+const TABS = ['timeline', 'data', 'questions', 'dossier', 'calendar', 'files'] as const;
+type TabId = (typeof TABS)[number];
+/** Старые ссылки (?tab=overview / sources) */
+const LEGACY_TABS: Record<string, TabId> = { overview: 'timeline', sources: 'data' };
 
-const FIELD_ICONS: Record<FieldType, LucideIcon> = {
-  text: Type,
-  longtext: AlignLeft,
-  date: Calendar,
-  number: Hash,
-  select: ListChecks,
-  url: Link2,
-  bool: SquareCheck,
-};
-
-function FieldTypeIcon({ type }: { type: FieldType }) {
-  const Icon = FIELD_ICONS[type];
-  return <Icon />;
+function parseTab(value: string | null): TabId {
+  if (value && (TABS as readonly string[]).includes(value)) return value as TabId;
+  return (value && LEGACY_TABS[value]) || 'timeline';
 }
-
-const SOURCE_LABELS: Record<string, string> = {
-  manual: 'Вручную',
-  outlook: 'Outlook',
-  google: 'Google',
-  csv: 'CSV',
-  vcard: 'vCard',
-  telegram: 'Telegram',
-  phone: 'Телефон',
-};
 
 export default function ContactPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { mutate: mutateGlobal } = useSWRConfig();
   const key = `/api/contacts/${id}`;
   const { data: contact, error, mutate } = useSWR<Contact>(key);
   const { data: templates = [] } = useSWR<Template[]>('/api/templates');
+  const dossier = useDossier(id);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
-  async function save(patch: ContactUpdate) {
-    if (!contact) return;
+  const tab = parseTab(searchParams.get('tab'));
+  const focusField = searchParams.get('focus') ?? undefined;
+
+  const openTab = useCallback(
+    (next: TabId, focus?: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('tab', next);
+      if (focus) params.set('focus', focus);
+      else params.delete('focus');
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  const save: SaveContact = async (patch, options) => {
+    if (!contact) return null;
+    const optimistic = { ...contact, ...patch, template_id: patch.template_id === '' ? null : (patch.template_id ?? contact.template_id) } as Contact;
+    void mutate(optimistic, { revalidate: false });
     try {
       const updated = await updateContact(contact.id, patch);
       await mutate(updated, { revalidate: false });
-      void mutateGlobal((k) => typeof k === 'string' && (k.startsWith('/api/contacts/?') || k.startsWith('/api/home')));
+      void mutateGlobal((k) => typeof k === 'string' && (k.startsWith('/api/contacts/?') || k.startsWith('/api/home') || k.startsWith('/api/tags') || k.startsWith('/api/groups')));
+      return null;
     } catch (err) {
-      toast.error(errorText(err));
+      if (!options?.silent) toast.error(errorText(err));
       void mutate();
+      return errorText(err);
     }
-  }
+  };
 
   async function handleDelete() {
     if (!contact) return;
@@ -131,6 +84,11 @@ export default function ContactPage() {
     } catch (err) {
       toast.error(errorText(err));
     }
+  }
+
+  function generateDossier() {
+    openTab('dossier');
+    void dossier.start();
   }
 
   if (error) {
@@ -145,12 +103,15 @@ export default function ContactPage() {
 
   if (!contact) {
     return (
-      <Page>
-        <Skeleton className="mb-6 size-[72px] rounded-full" />
-        <Skeleton className="mb-8 h-10 w-2/3" />
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 6 }, (_, i) => (
-            <Skeleton key={i} className="h-8" />
+      <Page className="max-w-[860px]">
+        <div className="flex gap-5">
+          <Skeleton className="size-20 rounded-full" />
+          <Skeleton className="h-12 w-2/3" />
+        </div>
+        <Skeleton className="mt-6 h-7 w-1/2" />
+        <div className="mt-8 flex flex-col gap-2">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-10" />
           ))}
         </div>
       </Page>
@@ -158,20 +119,6 @@ export default function ContactPage() {
   }
 
   const name = fullName(contact);
-  const template = templates.find((t) => t.id === contact.template_id);
-  const subtitle = [contact.position, contact.company].filter(Boolean).join(' · ');
-
-  function saveName(value: string) {
-    const [first = '', ...rest] = value.split(/\s+/);
-    void save({ first_name: first, last_name: rest.join(' ') });
-  }
-
-  function saveField(fieldKey: string, value: FieldValue | '') {
-    const fields = { ...contact!.fields };
-    if (value === '') delete fields[fieldKey];
-    else fields[fieldKey] = value;
-    void save({ fields });
-  }
 
   return (
     <>
@@ -182,145 +129,64 @@ export default function ContactPage() {
         <ChevronRight className="size-3.5 text-faint" />
         <span className="truncate px-1.5 text-sm">{name || 'Без имени'}</span>
         <span className="ml-auto mr-2 hidden text-xs text-faint sm:inline">Изменён {relativeTime(contact.updated_at)}</span>
-        <Menu>
-          <MenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Действия">
-              <MoreHorizontal />
-            </Button>
-          </MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem danger onSelect={() => setIsDeleteOpen(true)}>
-              <Trash2 /> Удалить контакт
-            </MenuItem>
-          </MenuContent>
-        </Menu>
       </div>
 
-      <Page className="pt-8">
-        <header className="mb-6 animate-fade-up">
-          <Avatar name={name || '?'} size="xl" className="mb-4" />
-          <EditableText
-            value={name}
-            onCommit={saveName}
-            placeholder="Без имени"
-            ariaLabel="Имя"
-            className="-mx-2 min-h-[52px] text-title hover:bg-hover/60 [&_input]:text-title"
-          />
-          {subtitle && <p className="mt-1 text-[15px] text-muted">{subtitle}</p>}
-        </header>
+      <Page className="max-w-[860px] pt-6">
+        <ContactHeader
+          contact={contact}
+          onSave={(patch) => void save(patch)}
+          onRefresh={() => void mutate()}
+          onOpenData={(field) => openTab('data', field)}
+          onGenerateDossier={generateDossier}
+          isDossierBusy={dossier.isGenerating}
+          onDelete={() => setIsDeleteOpen(true)}
+        />
+        <ContactSummary
+          contact={contact}
+          dossierText={dossier.dossier?.text ?? null}
+          onSave={(patch) => void save(patch)}
+          onOpenDossier={() => openTab('dossier')}
+        />
 
-        <section className="mb-8 flex flex-col gap-px" aria-label="Свойства">
-          <PropertyRow icon={<LayoutTemplate />} label="Шаблон">
-            <SelectValue
-              value={contact.template_id ?? ''}
-              options={templates.map((t) => t.id)}
-              placeholder="Без шаблона"
-              renderOption={(tid) => {
-                const t = templates.find((x) => x.id === tid);
-                return t ? <Tag><TemplateIcon name={t.icon} className="size-3" /> {t.name}</Tag> : <Tag>—</Tag>;
-              }}
-              onCommit={(tid) => void save({ template_id: tid })}
-            />
-          </PropertyRow>
-          <PropertyRow icon={<Building2 />} label="Компания">
-            <EditableText value={contact.company} onCommit={(v) => void save({ company: v })} ariaLabel="Компания" />
-          </PropertyRow>
-          <PropertyRow icon={<Briefcase />} label="Должность">
-            <EditableText value={contact.position} onCommit={(v) => void save({ position: v })} ariaLabel="Должность" />
-          </PropertyRow>
-          <PropertyRow icon={<Phone />} label="Телефон">
-            <MultiValue kind="tel" defaultLabel="мобильный" items={contact.phones} onChange={(phones) => void save({ phones })} />
-          </PropertyRow>
-          <PropertyRow icon={<AtSign />} label="Почта">
-            <MultiValue kind="email" defaultLabel="email" items={contact.emails} onChange={(emails) => void save({ emails })} />
-          </PropertyRow>
-          <PropertyRow icon={<MapPin />} label="Город">
-            <EditableText value={contact.city} onCommit={(v) => void save({ city: v })} ariaLabel="Город" />
-          </PropertyRow>
-          <PropertyRow icon={<Cake />} label="День рождения">
-            <EditableText
-              type="date"
-              value={contact.birthday ?? ''}
-              display={formatDate(contact.birthday)}
-              onCommit={(v) => void save({ birthday: v || null })}
-              ariaLabel="День рождения"
-            />
-          </PropertyRow>
-          <PropertyRow icon={<TagIcon />} label="Категория">
-            <EditableText value={contact.category} onCommit={(v) => void save({ category: v })} ariaLabel="Категория" />
-          </PropertyRow>
-          <PropertyRow icon={<Flag />} label="Приоритет">
-            <SelectValue
-              value={contact.priority}
-              options={Object.keys(PRIORITIES)}
-              renderOption={(p) => <Tag color={PRIORITIES[p]?.color ?? 'gray'}>{PRIORITIES[p]?.label ?? p}</Tag>}
-              onCommit={(v) => void save({ priority: v })}
-            />
-          </PropertyRow>
-
-          {template && template.fields.length > 0 && (
-            <div className="mt-3 border-t border-line pt-3">
-              <div className="mb-1 px-1 text-xs font-medium text-faint">
-                <span className="inline-flex items-center gap-1.5">
-                  <TemplateIcon name={template.icon} className="size-3" /> {template.name}
-                </span>
-              </div>
-              {template.fields.map((def) => (
-                <PropertyRow key={def.key} icon={<FieldTypeIcon type={def.type} />} label={def.label}>
-                  <FieldValueEditor def={def} value={contact.fields[def.key]} onCommit={(v) => saveField(def.key, v)} />
-                </PropertyRow>
-              ))}
-            </div>
-          )}
-
-          <CustomFields fields={contact.custom_fields} onChange={(custom_fields) => void save({ custom_fields })} />
-        </section>
-
-        <Tabs defaultValue={searchParams.get('tab') ?? 'overview'}>
-          <TabsList>
-            <TabsTrigger value="overview">
-              <StickyNote /> Заметки
+        <Tabs value={tab} onValueChange={(v) => openTab(parseTab(v))} className="mt-6">
+          <TabsList className="overflow-x-auto">
+            <TabsTrigger value="timeline">
+              <History /> Timeline
+            </TabsTrigger>
+            <TabsTrigger value="data">
+              <Database /> Данные
             </TabsTrigger>
             <TabsTrigger value="questions">
               <CircleHelp /> Вопросы
             </TabsTrigger>
+            <TabsTrigger value="dossier">
+              <Sparkles /> Досье
+            </TabsTrigger>
+            <TabsTrigger value="calendar">
+              <CalendarDays /> Календарь
+            </TabsTrigger>
             <TabsTrigger value="files">
               <Paperclip /> Файлы
             </TabsTrigger>
-            <TabsTrigger value="sources">
-              <Info /> Источники
-            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="pt-4">
-            <EditableText
-              isMultiline
-              value={contact.notes}
-              onCommit={(v) => void save({ notes: v })}
-              placeholder="Пишите здесь всё, что важно помнить: о чём говорили, договорённости, детали…"
-              ariaLabel="Заметки"
-              className="min-h-24"
-            />
-            <div className="mt-8">
-              <SectionTitle>Открытые вопросы</SectionTitle>
-              <QuestionsPanel contactId={contact.id} isCompact />
-            </div>
-            <div className="mt-8">
-              <SectionTitle>Встречи</SectionTitle>
-              <ContactEvents contact={{ id: contact.id, name: fullName(contact) || 'Без имени' }} />
-            </div>
+          <TabsContent value="timeline">
+            <TimelineTab contact={contact} onSave={(patch) => void save(patch)} onRefresh={() => void mutate()} />
           </TabsContent>
-
+          <TabsContent value="data">
+            <DataTab contact={contact} templates={templates} onSave={save} focusField={focusField} />
+          </TabsContent>
           <TabsContent value="questions" className="pt-4">
             <QuestionsPanel contactId={contact.id} />
           </TabsContent>
-
+          <TabsContent value="dossier">
+            <DossierTab state={dossier} />
+          </TabsContent>
+          <TabsContent value="calendar" className="pt-4">
+            <ContactEvents contact={{ id: contact.id, name: name || 'Без имени' }} />
+          </TabsContent>
           <TabsContent value="files" className="pt-4">
             <AttachmentsPanel contactId={contact.id} />
-          </TabsContent>
-
-          <TabsContent value="sources" className="pt-4">
-            <SourcesInfo contact={contact} />
           </TabsContent>
         </Tabs>
       </Page>
@@ -338,80 +204,5 @@ export default function ContactPage() {
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-function CustomFields({ fields, onChange }: { fields: CustomField[]; onChange: (fields: CustomField[]) => void }) {
-  function update(index: number, patch: Partial<CustomField>) {
-    onChange(fields.map((f, i) => (i === index ? { ...f, ...patch } : f)));
-  }
-
-  return (
-    <div className="mt-1">
-      {fields.map((field, index) => (
-        <div key={index} className="group grid grid-cols-[96px_1fr_auto] items-start gap-1 sm:grid-cols-[minmax(120px,170px)_1fr_auto]">
-          <EditableText
-            value={field.key}
-            onCommit={(key) => update(index, { key: key || 'Поле' })}
-            ariaLabel="Название поля"
-            className="text-muted"
-            display={
-              <span className="flex items-center gap-2 text-muted">
-                <Hash className="size-4 text-faint" />
-                <span className="truncate">{field.key}</span>
-              </span>
-            }
-          />
-          <EditableText value={field.value} onCommit={(value) => update(index, { value })} ariaLabel={field.key} />
-          <button
-            type="button"
-            onClick={() => onChange(fields.filter((_, i) => i !== index))}
-            className="mt-1.5 rounded p-0.5 text-faint opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
-            aria-label={`Удалить поле ${field.key}`}
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...fields, { key: 'Новое поле', value: '' }])}
-        className="flex h-8 items-center gap-2 rounded px-1 text-sm text-faint hover:bg-hover hover:text-muted"
-      >
-        <Plus className="size-4" /> Добавить свойство
-      </button>
-    </div>
-  );
-}
-
-function SourcesInfo({ contact }: { contact: Contact }) {
-  const sources = contact.sources.length ? contact.sources : [contact.source];
-  return (
-    <div className="flex flex-col gap-px">
-      <PropertyRow icon={<Info />} label="Откуда">
-        <div className="flex min-h-8 flex-wrap items-center gap-1 px-2">
-          {sources.map((s) => (
-            <Tag key={s} color="gray">
-              {SOURCE_LABELS[s] ?? s}
-            </Tag>
-          ))}
-        </div>
-      </PropertyRow>
-      <PropertyRow icon={<Info />} label="Связан с">
-        <div className="flex min-h-8 flex-wrap items-center gap-1 px-2 text-sm">
-          {contact.external_ids.outlook && <Tag color="blue">Outlook</Tag>}
-          {contact.external_ids.google && <Tag color="green">Google</Tag>}
-          {!contact.external_ids.outlook && !contact.external_ids.google && <span className="text-faint">Только в CRM</span>}
-        </div>
-      </PropertyRow>
-      <PropertyRow icon={<Info />} label="Создан">
-        <div className="flex min-h-8 items-center px-2 text-sm">{new Date(contact.created_at).toLocaleString('ru-RU')}</div>
-      </PropertyRow>
-      <PropertyRow icon={<Info />} label="Синхронизирован">
-        <div className="flex min-h-8 items-center px-2 text-sm">
-          {contact.last_synced_at ? new Date(contact.last_synced_at).toLocaleString('ru-RU') : <span className="text-faint">—</span>}
-        </div>
-      </PropertyRow>
-    </div>
   );
 }
