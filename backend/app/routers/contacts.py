@@ -17,6 +17,7 @@ from ..repositories import contacts as repo
 from ..repositories import events as events_repo
 from ..repositories import groups as groups_repo
 from ..repositories import interactions as interactions_repo
+from ..repositories import reminders as reminders_repo
 from ..repositories import questions as questions_repo
 from ..repositories import templates as templates_repo
 from ..services.attachments import delete_for_contact as delete_attachments
@@ -187,7 +188,7 @@ async def delete_contact(
     db: DbDep,
     _user: AuthDep,
 ) -> None:
-    """Удалить контакт по ID вместе с вопросами и файлами. Возвращает 204 No Content при успехе."""
+    """Удалить контакт по ID вместе с вопросами, файлами и напоминаниями. Возвращает 204 No Content при успехе."""
     deleted = await repo.delete_contact(db, contact_id)
     if not deleted:
         raise HTTPException(
@@ -198,3 +199,4 @@ async def delete_contact(
     await delete_attachments(db, contact_id)
     await events_repo.unlink_contact(db, contact_id)
     await interactions_repo.unlink_contact(db, contact_id)
+    await reminders_repo.delete_for_contact(db, contact_id)

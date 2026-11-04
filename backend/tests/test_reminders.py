@@ -178,3 +178,14 @@ class TestHome:
 
     def test_home_empty(self, client, auth):
         assert client.get("/api/home", headers=auth).json()["reminders"] == []
+
+
+def test_deleting_contact_removes_its_reminders(client, auth, contact):
+    own = _add(client, auth, title="Поздравить", contact_id=contact["id"])
+    other = _add(client, auth, title="Без контакта")
+
+    assert client.delete(f"/api/contacts/{contact['id']}", headers=auth).status_code == 204
+
+    titles = _titles(client, auth, status="all")
+    assert own["title"] not in titles
+    assert other["title"] in titles
