@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { toast } from 'sonner';
-import { ChevronRight, Loader2, MapPin, Minus, Plus, Search } from 'lucide-react';
+import { Box, ChevronRight, Loader2, MapPin, Minus, Plus, Search } from 'lucide-react';
 import { Page, PageHeader, Skeleton } from '@/components/app/page';
 import { Avatar } from '@/components/app/avatar';
 import { Button } from '@/components/ui/button';
@@ -118,9 +118,23 @@ function PlaceSearch({ onPick }: { onPick: (place: GeoPlace) => void }) {
 
 const selectClass = 'h-8 min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-2 text-[13px] text-fg';
 
+const MAP_3D_KEY = 'crm_map_3d';
+
 export default function MapPage() {
   const router = useRouter();
   const mapRef = useRef<ContactMapHandle>(null);
+  // null — пока не прочитали сохранённый выбор: карту создаём один раз и сразу в нужном режиме
+  const [is3d, setIs3d] = useState<boolean | null>(null);
+  useEffect(() => {
+    setIs3d(window.localStorage.getItem(MAP_3D_KEY) !== '0');
+  }, []);
+  const toggle3d = useCallback(() => {
+    setIs3d((current) => {
+      const next = !current;
+      window.localStorage.setItem(MAP_3D_KEY, next ? '1' : '0');
+      return next;
+    });
+  }, []);
   const [initialView] = useState(viewFromUrl);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [sort, setSort] = useState<Sort>('name');
@@ -205,14 +219,17 @@ export default function MapPage() {
       />
       <div className="flex min-h-[560px] flex-col gap-4 lg:h-[calc(100vh-260px)] lg:flex-row">
         <div className="relative h-[420px] overflow-hidden rounded-2xl border border-line shadow-xs lg:h-auto lg:flex-[7]">
-          <ContactMap
-            ref={mapRef}
-            className="size-full"
-            points={points}
-            initialView={initialView}
-            onViewChange={handleViewChange}
-            onOpenContact={openContact}
-          />
+          {is3d !== null && (
+            <ContactMap
+              ref={mapRef}
+              className="size-full"
+              points={points}
+              initialView={initialView}
+              onViewChange={handleViewChange}
+              onOpenContact={openContact}
+              is3d={is3d}
+            />
+          )}
           <PlaceSearch onPick={(p) => mapRef.current?.flyTo(p.lat, p.lng, 11)} />
           <div className="absolute right-3 top-3 z-10 flex flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-md">
             <button type="button" aria-label="Приблизить" className="grid size-9 place-items-center hover:bg-hover" onClick={() => mapRef.current?.zoomBy(1)}>
@@ -220,6 +237,16 @@ export default function MapPage() {
             </button>
             <button type="button" aria-label="Отдалить" className="grid size-9 place-items-center border-t border-line hover:bg-hover" onClick={() => mapRef.current?.zoomBy(-1)}>
               <Minus className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Объёмная карта"
+              aria-pressed={is3d === true}
+              title="Объёмная карта: глобус, рельеф и здания. Наклон и поворот — правой кнопкой мыши или Ctrl + перетаскивание."
+              className={`grid size-9 place-items-center border-t border-line hover:bg-hover ${is3d ? 'bg-accent-50 text-accent-700' : ''}`}
+              onClick={toggle3d}
+            >
+              <Box className="size-4" />
             </button>
           </div>
         </div>
