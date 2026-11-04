@@ -32,7 +32,9 @@ from .routers import groups as groups_router
 from .routers import home as home_router
 from .routers import interactions as interactions_router
 from .routers import keep_in_touch as keep_in_touch_router
+from .routers import geo as geo_router
 from .routers import network as network_router
+from .routers import preferences as preferences_router
 from .routers import tags as tags_router
 from .routers import questions as questions_router
 from .routers import templates as templates_router
@@ -135,6 +137,9 @@ app.include_router(tags_router.router)
 app.include_router(interactions_router.router)
 app.include_router(keep_in_touch_router.router)
 app.include_router(network_router.router)
+# Карта, Сеть, Priority Map (Wave 1): поиск мест / геокодирование, настройки уровней приоритета
+app.include_router(geo_router.router)
+app.include_router(preferences_router.router)
 
 # Календарь: /api/calendar/* — события, привязанные к людям (Sprint 7)
 app.include_router(calendar_router.router)
