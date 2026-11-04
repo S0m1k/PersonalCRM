@@ -204,6 +204,23 @@ class TestListing:
         assert titles(q="ужин") == ["Ужин вдвоём"]
         assert titles(**{"from": iso(-2.5), "to": iso(-1.5)}) == ["Созвон по проекту"]
 
+    def test_repeated_kind_and_contact_id_are_or_filters(self, crm_client, crm_auth):
+        anna = make_contact(crm_client, crm_auth, "Анна")
+        boris = make_contact(crm_client, crm_auth, "Борис")
+        vera = make_contact(crm_client, crm_auth, "Вера")
+        log(crm_client, crm_auth, [anna["id"]], days_ago=3, title="A", kind="meeting")
+        log(crm_client, crm_auth, [boris["id"]], days_ago=2, title="B", kind="call")
+        log(crm_client, crm_auth, [vera["id"]], days_ago=1, title="V", kind="email")
+
+        def titles(**params):
+            resp = crm_client.get(INTERACTIONS, params=params, headers=crm_auth)
+            assert resp.status_code == 200, resp.text
+            return [i["title"] for i in resp.json()["items"]]
+
+        assert titles(kind=["meeting", "call"]) == ["B", "A"]
+        assert titles(contact_id=[anna["id"], vera["id"]]) == ["V", "A"]
+        assert titles(kind=["email", "call"], contact_id=[boris["id"], vera["id"]]) == ["V", "B"]
+
     def test_search_text_is_not_a_regex(self, crm_client, crm_auth):
         anna = make_contact(crm_client, crm_auth)
         log(crm_client, crm_auth, [anna["id"]], title="a.b")

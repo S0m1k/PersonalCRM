@@ -200,8 +200,8 @@ def _regex(q: str) -> dict:
 
 async def list_page(
     db: AsyncIOMotorDatabase,
-    contact_id: Optional[str] = None,
-    kind: Optional[str] = None,
+    contact_ids: Optional[list[str]] = None,
+    kinds: Optional[list[str]] = None,
     from_: Optional[datetime] = None,
     to: Optional[datetime] = None,
     q: Optional[str] = None,
@@ -214,10 +214,10 @@ async def list_page(
     parsed = decode_cursor(cursor) if cursor else None
 
     clauses = _time_filters("occurred_at", from_, to, parsed)
-    if contact_id:
-        clauses.append({"contact_ids": contact_id})
-    if kind:
-        clauses.append({"kind": kind})
+    if contact_ids:
+        clauses.append({"contact_ids": {"$in": contact_ids}})
+    if kinds:
+        clauses.append({"kind": {"$in": kinds}})
     if q and q.strip():
         clauses.append({"$or": [{"title": _regex(q)}, {"body": _regex(q)}]})
     docs = (
@@ -229,8 +229,8 @@ async def list_page(
     )
     items = [(to_aware_utc(d["occurred_at"]), str(d["_id"]), InteractionOut.from_mongo(d)) for d in docs]
 
-    if include_events and kind in (None, "", "meeting"):
-        items += await _event_items(db, contact_id, from_, to, q, parsed, limit + 1)
+    if include_events and (not kinds or "meeting" in kinds):
+        items += await _event_items(db, contact_ids, from_, to, q, parsed, limit + 1)
 
     items.sort(key=lambda t: (t[0], t[1]), reverse=True)
     page = items[:limit]
@@ -252,7 +252,7 @@ async def shared_contact_groups(db: AsyncIOMotorDatabase) -> list[list[str]]:
 
 async def _event_items(
     db: AsyncIOMotorDatabase,
-    contact_id: Optional[str],
+    contact_ids: Optional[list[str]],
     from_: Optional[datetime],
     to: Optional[datetime],
     q: Optional[str],
@@ -262,7 +262,7 @@ async def _event_items(
     """Прошедшие события, привязанные к людям, в виде встреч (только чтение)."""
     clauses = _time_filters("start", from_, to, cursor)
     clauses.append({"start": {"$lte": _utcnow()}})
-    clauses.append({"contact_ids": contact_id} if contact_id else {"contact_ids.0": {"$exists": True}})
+    clauses.append({"contact_ids": {"$in": contact_ids}} if contact_ids else {"contact_ids.0": {"$exists": True}})
     if q and q.strip():
         clauses.append({"$or": [{"title": _regex(q)}, {"location": _regex(q)}]})
     docs = (

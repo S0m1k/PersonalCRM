@@ -9,6 +9,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user, get_user_db
@@ -50,8 +51,11 @@ async def keep_in_touch(
     db: DbDep,
     _user: AuthDep,
     today: Optional[date] = Query(default=None, description="Локальная дата пользователя"),
-) -> KeepInTouchBuckets:
-    return await repo.load_buckets(db, today or date.today())
+    include_unset: bool = Query(default=False, description="Добавить unset — контакты без частоты"),
+) -> JSONResponse:
+    buckets = await repo.load_buckets(db, today or date.today(), include_unset)
+    # Без include_unset поле unset отсутствует в ответе (а не null)
+    return JSONResponse(buckets.model_dump(mode="json", exclude=None if include_unset else {"unset"}))
 
 
 @router.post("/api/contacts/{contact_id}/snooze", response_model=ContactOut, summary="Отложить напоминание")
