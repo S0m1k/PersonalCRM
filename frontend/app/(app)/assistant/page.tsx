@@ -82,6 +82,17 @@ export default function AssistantPage() {
     setText('');
   }, []);
 
+  // Переход с «Главной»: /assistant?chat=<id>&job=<id> открывает чат и продолжает опрос ответа
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const chatId = params.get('chat');
+    const startedJob = params.get('job');
+    if (!chatId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- разовая инициализация из URL
+    setActiveId(chatId);
+    if (startedJob) setActiveJob({ chatId, jobId: startedJob });
+  }, []);
+
   async function send(value: string) {
     const body = value.trim();
     if (!body || busy) return;
