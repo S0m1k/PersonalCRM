@@ -35,11 +35,11 @@ export function KitUpcoming({ rows }: { rows: KitRow[] }) {
             {section.rows.map((row) => (
               <li key={row.id} className="flex flex-wrap items-center gap-3 rounded-xl px-2 py-2 hover:bg-hover/60">
                 <Avatar name={row.name} size="lg" />
-                <div className="min-w-0 flex-1">
+                <div className="min-w-[12rem] flex-1">
                   <Link href={`/contacts/${row.id}`} className="block truncate text-sm font-medium hover:underline">
                     {row.name}
                   </Link>
-                  <div className="truncate text-xs text-muted">
+                  <div className="text-xs text-muted [overflow-wrap:anywhere]">
                     {[row.company, frequencyLabel(row.frequency_days), `Последнее: ${lastInteractionText(row)}`].filter(Boolean).join(' · ')}
                   </div>
                 </div>

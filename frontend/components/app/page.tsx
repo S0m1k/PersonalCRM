@@ -6,7 +6,7 @@ import { IconTile } from './icons';
 /** Колонка страницы в духе Notion: широкие поля, контент по центру. */
 export function Page({ children, wide = false, className }: { children: ReactNode; wide?: boolean; className?: string }) {
   return (
-    <div className={cn('mx-auto w-full px-4 pb-24 pt-8 sm:px-12 sm:pt-14 lg:px-24', wide ? 'max-w-[1200px]' : 'max-w-[900px]', className)}>
+    <div className={cn('mx-auto w-full px-4 pb-24 pt-8 sm:px-8 sm:pt-14 lg:px-12', wide ? 'max-w-[1200px]' : 'max-w-[900px]', className)}>
       {children}
     </div>
   );

@@ -63,7 +63,7 @@ export default function TemplatesPage() {
         title="Шаблоны карточек"
         description="Шаблон задаёт дополнительные поля карточки: у клиента — стадия и бюджет, у друга — семья и идеи подарков."
       />
-      <div className="grid gap-8 md:grid-cols-[220px_1fr]">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
         <nav className="flex flex-col gap-px" aria-label="Шаблоны">
           {!templates
             ? Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="mb-1 h-8" />)
@@ -168,7 +168,7 @@ function TemplateEditor({ template, onSaved, onDeleted }: EditorProps) {
         />
       </div>
 
-      <div className="mb-2 grid grid-cols-[1fr_170px_80px] gap-2 px-1 text-xs font-medium text-faint">
+      <div className="mb-2 hidden grid-cols-[minmax(0,1fr)_170px_112px] gap-2 px-1 text-xs font-medium text-faint lg:grid">
         <span>Поле</span>
         <span>Тип</span>
         <span />
@@ -176,8 +176,8 @@ function TemplateEditor({ template, onSaved, onDeleted }: EditorProps) {
       <div className="flex flex-col gap-2">
         {draft.fields.map((field, index) => (
           <div key={field.key || `new-${index}`} className="rounded-md border border-line p-2">
-            <div className="grid grid-cols-[1fr_170px_80px] items-center gap-2">
-              <Input value={field.label} onChange={(e) => updateField(index, { label: e.target.value })} aria-label="Название поля" />
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 lg:grid-cols-[minmax(0,1fr)_170px_112px]">
+              <Input className="col-span-2 lg:col-span-1" value={field.label} onChange={(e) => updateField(index, { label: e.target.value })} aria-label="Название поля" />
               <Menu>
                 <MenuTrigger asChild>
                   <Button variant="outline" className="justify-start font-normal">

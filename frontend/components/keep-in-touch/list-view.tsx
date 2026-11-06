@@ -25,7 +25,7 @@ export function KitList({ rows }: { rows: KitRow[] }) {
 
   if (rows.length === 0) return null;
   return (
-    <div className="overflow-x-auto rounded-2xl border border-line">
+    <div className="relative overflow-x-auto rounded-2xl border border-line">
       <table className="w-full min-w-[820px] text-sm">
         <thead>
           <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
@@ -44,7 +44,7 @@ export function KitList({ rows }: { rows: KitRow[] }) {
         <tbody>
           {sorted.map((row) => (
             <tr key={row.id} className="border-b border-line last:border-0 hover:bg-hover/50">
-              <td className="px-3 py-2">
+              <td className="max-w-[260px] px-3 py-2">
                 <Link href={`/contacts/${row.id}`} className="flex items-center gap-2 hover:underline">
                   <Avatar name={row.name} size="md" />
                   <span className="min-w-0">

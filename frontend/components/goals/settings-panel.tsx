@@ -84,11 +84,11 @@ function NumberField({
   const id = useId();
   const clamp = (n: number) => Math.min(max, Math.max(min, Number.isFinite(n) ? n : min));
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,14rem)_1fr_6rem]">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
       <label htmlFor={id} className="text-sm">{label}</label>
-      <div className="flex items-center gap-1.5 sm:order-3">
+      <div className="flex items-center gap-1.5">
         <Input
-          id={id} type="number" inputMode="decimal" className="h-8 text-right" min={min} max={max} step={step}
+          id={id} type="number" inputMode="decimal" className="h-8 w-20 text-right" min={min} max={max} step={step}
           value={value} onChange={(e) => onChange(clamp(Number(e.target.value)))}
         />
         {unit && <span className="text-xs text-muted">{unit}</span>}
@@ -96,7 +96,7 @@ function NumberField({
       <input
         type="range" aria-label={label} min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="col-span-2 accent-[rgb(var(--accent))] sm:order-2 sm:col-span-1"
+        className="col-span-2 accent-[rgb(var(--accent))]"
       />
     </div>
   );

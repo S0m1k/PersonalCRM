@@ -220,7 +220,7 @@ export function FieldValueEditor({
 /** Строка свойства: подпись слева, значение справа. */
 export function PropertyRow({ icon, label, children }: { icon: ReactNode; label: ReactNode; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[96px_1fr] items-start gap-1 sm:grid-cols-[minmax(120px,170px)_1fr]">
+    <div className="grid grid-cols-[88px_1fr] items-start gap-1 sm:grid-cols-[minmax(112px,156px)_1fr]">
       <div className="flex h-8 items-center gap-2 px-1 text-sm text-muted [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-faint">
         {icon}
         <span className="truncate">{label}</span>

@@ -103,7 +103,7 @@ export default function ContactPage() {
 
   if (!contact) {
     return (
-      <Page className="max-w-[860px]">
+      <Page className="max-w-[1040px]">
         <div className="flex gap-5">
           <Skeleton className="size-20 rounded-full" />
           <Skeleton className="h-12 w-2/3" />
@@ -131,7 +131,7 @@ export default function ContactPage() {
         <span className="ml-auto mr-2 hidden text-xs text-faint sm:inline">Изменён {relativeTime(contact.updated_at)}</span>
       </div>
 
-      <Page className="max-w-[860px] pt-6">
+      <Page className="max-w-[1040px] pt-6">
         <ContactHeader
           contact={contact}
           onSave={(patch) => void save(patch)}
