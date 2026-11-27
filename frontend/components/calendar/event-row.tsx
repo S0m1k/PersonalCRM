@@ -26,16 +26,17 @@ export function EventRow({ event, day, onOpen, isCompact = false }: Props) {
       type="button"
       onClick={() => onOpen(event)}
       className={cn(
-        '-mx-2 flex w-[calc(100%+16px)] items-start gap-3 rounded px-2 text-left transition-colors hover:bg-hover',
-        isCompact ? 'py-1.5' : 'py-2',
+        '-mx-2 flex w-[calc(100%+16px)] rounded px-2 text-left transition-colors hover:bg-hover',
+        // В узкой колонке недели время стоит над названием: рядом названию оставалось ~20px
+        isCompact ? 'flex-col gap-0.5 py-1.5' : 'items-start gap-3 py-2',
       )}
     >
-      <span className={cn('tabular shrink-0 pt-px text-xs text-muted', isCompact ? 'w-12' : 'w-[88px]')}>
+      <span className={cn('tabular shrink-0 text-xs text-muted', isCompact ? '' : 'w-[88px] pt-px')}>
         {timeRange(event, day)}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{event.title}</span>
+          <span className={cn('text-sm font-medium', isCompact ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'truncate')}>{event.title}</span>
           {Mark && (
             <span className="shrink-0 opacity-70 [&_svg]:size-3.5" aria-label="Из внешнего календаря">
               <Mark />
@@ -43,8 +44,8 @@ export function EventRow({ event, day, onOpen, isCompact = false }: Props) {
           )}
         </span>
         {(people || (!isCompact && event.location)) && (
-          <span className="flex items-center gap-2 truncate text-xs text-muted">
-            {people && <span className="truncate">{people}</span>}
+          <span className={cn('text-xs text-muted', isCompact ? 'block' : 'flex items-center gap-2 truncate')}>
+            {people && <span className={isCompact ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'truncate'}>{people}</span>}
             {!isCompact && event.location && (
               <span className="flex shrink-0 items-center gap-0.5 text-faint">
                 <MapPin className="size-3" /> {event.location}

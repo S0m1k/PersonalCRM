@@ -76,7 +76,7 @@ export default function LocationsPage() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Левая колонка: люди без места */}
         <section aria-label="Контакты без места">
           <div className="mb-2 flex flex-wrap items-center gap-2">

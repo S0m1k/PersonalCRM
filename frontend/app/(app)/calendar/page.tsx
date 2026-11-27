@@ -146,7 +146,7 @@ export default function CalendarPage() {
       {isLoading || !events ? (
         <Skeleton className="h-64" />
       ) : view === 'week' ? (
-        <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-7">
+        <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {days.map((day) => {
             const dayEvents = events.filter((e) => occursOn(e, day));
             const isToday = sameDay(day, today);

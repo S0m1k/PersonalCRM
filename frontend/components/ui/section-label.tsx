@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 export function SectionLabel({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
-      className={cn('text-[11px] font-semibold uppercase leading-none tracking-[0.08em] text-muted', className)}
+      className={cn('text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-muted', className)}
       {...props}
     />
   );

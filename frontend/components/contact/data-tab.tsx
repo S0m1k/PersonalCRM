@@ -24,7 +24,7 @@ export function DataTab({ contact, templates, onSave, focusField }: Props) {
   }, [focusField]);
 
   return (
-    <div className="grid grid-cols-1 items-start gap-4 pt-4 md:grid-cols-2">
+    <div className="grid grid-cols-1 items-start gap-4 pt-4 xl:grid-cols-2">
       <div className="flex flex-col gap-4">
         <RelatedCard contact={contact} onSave={onSave} />
         <TagsCard contact={contact} onSave={onSave} />
